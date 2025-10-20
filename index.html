@@ -106,14 +106,22 @@
                 <!-- Input de Texto -->
                 <input type="text" id="messageInput" placeholder="Escribe tu mensaje..." class="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
                 
-                <!-- Botón de Alerta de Sonido (Compacto y con Icono) -->
-                <button onclick="playSound('synth')" 
-                        class="flex-shrink-0 w-12 h-12 flex items-center justify-center 
-                               bg-red-500 hover:bg-red-600 text-white text-xl rounded-full 
-                               shadow-lg transition duration-150 transform hover:scale-105" 
-                        title="Enviar Alerta Sonora">
-                    🚨
-                </button>
+                <!-- Contenedor para Alerta Dirigida -->
+                <div class="flex items-center space-x-1">
+                    <!-- Selector de Usuario -->
+                    <select id="alertRecipientSelect" class="p-2 border border-gray-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-red-500 min-w-28">
+                        <option value="" disabled selected>Selecciona receptor</option>
+                    </select>
+                    
+                    <!-- Botón de Alerta de Sonido (Ahora llama a sendTargetedAlert) -->
+                    <button onclick="sendTargetedAlert()" 
+                            class="flex-shrink-0 w-12 h-12 flex items-center justify-center 
+                                bg-red-500 hover:bg-red-600 text-white text-xl rounded-full 
+                                shadow-lg transition duration-150 transform hover:scale-105" 
+                            title="Enviar Alerta Sonora Dirigida">
+                        🚨
+                    </button>
+                </div>
                 
                 <!-- Botón de Enviar Mensaje -->
                 <button onclick="sendChatMessage()" class="flex-shrink-0 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-xl transition duration-150">
@@ -202,7 +210,6 @@
         };
 
         // Variables globales del entorno
-        // Usamos la configuración del usuario
         const firebaseConfig = userProvidedFirebaseConfig;
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
@@ -210,8 +217,8 @@
         let db;
         let auth;
         let currentUserId = 'unknown'; 
-        let currentUsername = 'Usuario Anónimo'; // Nuevo: Nombre de usuario actual
-        let userMap = {}; // Nuevo: Mapa global de {userId: username} para renderizar mensajes
+        let currentUsername = 'Usuario Anónimo'; 
+        let userMap = {}; // {userId: username}
         
         // Constantes de ruta
         const CHAT_COLLECTION_PATH = `/artifacts/${appId}/public/data/chat_messages`;
@@ -225,11 +232,12 @@
         const usernameSetup = document.getElementById('usernameSetup');
         const usernameInput = document.getElementById('usernameInput');
         const usernameError = document.getElementById('usernameError');
-        const usernameDisplay = document.getElementById('usernameDisplay'); // Ahora es un botón
+        const usernameDisplay = document.getElementById('usernameDisplay');
         const drawingCanvas = document.getElementById('drawingCanvas');
         const d_ctx = drawingCanvas.getContext('2d');
         const strokeWidthInput = document.getElementById('strokeWidth');
         const colorPicker = document.getElementById('colorPicker');
+        const alertRecipientSelect = document.getElementById('alertRecipientSelect'); // Nuevo Selector
         
         // Variables de estado del dibujo
         let isDrawing = false;
@@ -248,18 +256,16 @@
             try {
                 setLogLevel('debug'); 
                 
-                // VERIFICACIÓN DE CONFIGURACIÓN
                 if (!firebaseConfig || !firebaseConfig.projectId) {
                     console.error("CRITICAL ERROR: Firebase configuration is missing 'projectId'. Cannot initialize Firebase.");
                     userInfoDisplay.textContent = `CRITICAL ERROR: Error de configuración de Firebase. No se pudo conectar la base de datos.`;
-                    return; // Detener la ejecución si la configuración es inválida
+                    return; 
                 }
 
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // Autenticar al usuario
                 if (initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
                 } else {
@@ -269,10 +275,9 @@
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         currentUserId = user.uid;
-                        userIdShort.textContent = currentUserId; // Muestra el ID completo en el setup
+                        userIdShort.textContent = currentUserId; 
                         console.log("Usuario autenticado. UID:", currentUserId);
                         
-                        // Configurar listeners una vez autenticado
                         setupProfileListener();
                         setupMessageListener();
                     } else {
@@ -288,15 +293,15 @@
         }
         
         // ************************************
-        // 2. GESTIÓN DEL NOMBRE DE USUARIO (Manejo de persistencia por UID)
+        // 2. GESTIÓN DEL NOMBRE DE USUARIO Y PERFILES
         // ************************************
         
         /**
-         * Muestra el formulario de configuración de nombre de usuario y lo precarga.
+         * Muestra el formulario de configuración de nombre de usuario.
          */
         window.showUsernameSetup = function() {
             if (currentUsername && currentUsername !== 'Usuario Anónimo') {
-                usernameInput.value = currentUsername; // Precargar el nombre actual para edición
+                usernameInput.value = currentUsername;
             } else {
                 usernameInput.value = '';
             }
@@ -310,9 +315,9 @@
         /**
          * Intenta establecer un nombre de usuario, verificando unicidad.
          */
-        window.attemptSetUsername = async function() { // Hago la función global (window)
+        window.attemptSetUsername = async function() {
             const username = usernameInput.value.trim();
-            usernameError.classList.add('hidden'); // Ocultar errores previos
+            usernameError.classList.add('hidden');
 
             if (username.length < 3) {
                 usernameError.textContent = "El nombre debe tener al menos 3 caracteres.";
@@ -325,7 +330,6 @@
                 return;
             }
             
-            // Si el nombre no ha cambiado, no hacemos nada y ocultamos el setup
             if (username === currentUsername) {
                 usernameSetup.classList.add('hidden');
                 usernameDisplay.classList.remove('hidden');
@@ -338,13 +342,11 @@
                 return;
             }
 
-
             try {
-                // 1. Verificar unicidad (solo si el nuevo nombre es diferente del actual)
+                // 1. Verificar unicidad 
                 const q = query(collection(db, USER_PROFILES_COLLECTION_PATH), where("username", "==", username));
                 const snapshot = await getDocs(q);
 
-                // Si hay resultados Y el ID del resultado no es nuestro ID, entonces está tomado por otra persona
                 if (!snapshot.empty) {
                     let isTakenByOther = false;
                     snapshot.forEach(doc => {
@@ -360,7 +362,7 @@
                     }
                 }
 
-                // 2. Guardar el nombre de usuario, asociado al UID
+                // 2. Guardar el nombre de usuario
                 const userDocRef = doc(db, USER_PROFILES_COLLECTION_PATH, currentUserId);
                 await setDoc(userDocRef, {
                     userId: currentUserId,
@@ -368,12 +370,41 @@
                     timestamp: serverTimestamp(),
                 });
 
-                // La UI se actualizará automáticamente a través del listener setupProfileListener
-                console.log(`Nombre de usuario '${username}' guardado con éxito y persistente.`);
+                console.log(`Nombre de usuario '${username}' guardado con éxito.`);
             } catch (e) {
                 console.error("Error al establecer el nombre de usuario: ", e);
                 usernameError.textContent = "Error al guardar. Inténtalo de nuevo.";
                 usernameError.classList.remove('hidden');
+            }
+        }
+
+        /**
+         * Rellena el selector de destinatarios con los usuarios activos.
+         */
+        function populateRecipientSelector() {
+            alertRecipientSelect.innerHTML = '';
+            
+            const defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.textContent = 'Selecciona receptor';
+            defaultOption.disabled = true;
+            defaultOption.selected = true;
+            alertRecipientSelect.appendChild(defaultOption);
+
+            // Opción para auto-alerta (útil para pruebas)
+            const selfOption = document.createElement('option');
+            selfOption.value = currentUserId;
+            selfOption.textContent = `${currentUsername} (Tú)`;
+            alertRecipientSelect.appendChild(selfOption);
+
+            // Agregar otros usuarios
+            for (const userId in userMap) {
+                if (userId !== currentUserId) {
+                    const option = document.createElement('option');
+                    option.value = userId;
+                    option.textContent = userMap[userId];
+                    alertRecipientSelect.appendChild(option);
+                }
             }
         }
 
@@ -399,27 +430,25 @@
 
                 userMap = tempUserMap;
 
-                // Actualizar la interfaz de usuario para reflejar el estado del perfil
-                // Muestra la información de ID en el estado inicial de la carga
+                // Actualizar el selector de destinatarios
+                populateRecipientSelector(); 
+
                 userInfoDisplay.textContent = `ID de sesión: ${currentUserId.substring(0, 8)}...`;
 
                 if (userHasProfile) {
-                    // Si el usuario tiene un perfil guardado (¡Persistencia!)
                     usernameSetup.classList.add('hidden');
                     usernameDisplay.textContent = `¡Estás chateando como: ${currentUsername}! (Click para editar)`;
                     usernameDisplay.classList.remove('hidden');
-                    userInfoDisplay.classList.add('hidden'); // Ocultar el mensaje genérico
-                    messageInput.placeholder = "Escribe tu mensaje..."; // Restablecer placeholder
+                    userInfoDisplay.classList.add('hidden');
+                    messageInput.placeholder = "Escribe tu mensaje..."; 
                 } else {
-                    // Si el usuario no tiene perfil (primera vez)
                     usernameDisplay.classList.add('hidden');
                     usernameSetup.classList.remove('hidden');
                     userInfoDisplay.classList.remove('hidden'); 
                     userInfoDisplay.textContent = `ID de sesión: ${currentUserId.substring(0, 8)}... - Por favor, elige tu nombre de usuario:`;
-                    messageInput.placeholder = "Debes elegir un nombre para chatear..."; // Indicación visual
+                    messageInput.placeholder = "Debes elegir un nombre para chatear..."; 
                 }
 
-                // Forzar un redibujo del chat si el userMap ha cambiado (para actualizar nombres antiguos)
                 setupMessageListener(true); 
 
             }, (error) => {
@@ -435,18 +464,16 @@
         /**
          * Envía un mensaje de texto a Firestore.
          */
-        window.sendChatMessage = async function() { // Hago la función global (window)
+        window.sendChatMessage = async function() { 
             const text = messageInput.value.trim();
             if (!text || !db) return;
             
-            // Si el setup está visible, significa que el usuario no tiene nombre
             if (usernameSetup.classList.contains('hidden') === false) {
                  postSystemMessage("¡ERROR! Debes configurar un nombre de usuario primero para chatear.");
                 return;
             }
 
             try {
-                // El chat se guarda AQUÍ en la colección CHAT_COLLECTION_PATH
                 await addDoc(collection(db, CHAT_COLLECTION_PATH), {
                     userId: currentUserId,
                     type: 'text',
@@ -454,19 +481,52 @@
                     timestamp: serverTimestamp(),
                 });
                 messageInput.value = '';
-                usernameError.classList.add('hidden'); // Ocultar mensaje de error si existía
+                usernameError.classList.add('hidden');
             } catch (e) {
                 console.error("Error al enviar el mensaje: ", e);
             }
         }
 
         /**
+         * Nuevo: Envía un mensaje de alerta dirigido a Firestore.
+         */
+        window.sendTargetedAlert = async function() {
+            const recipientId = alertRecipientSelect.value;
+            
+            if (!recipientId || !db) {
+                postSystemMessage("¡ERROR! Debes seleccionar un destinatario válido para la alerta.");
+                return;
+            }
+
+            if (usernameSetup.classList.contains('hidden') === false) {
+                 postSystemMessage("¡ERROR! Debes configurar un nombre de usuario para enviar alertas.");
+                return;
+            }
+
+            const recipientName = userMap[recipientId] || 'Usuario Desconocido';
+            
+            try {
+                // Mensaje especial de tipo 'alert' con el ID del receptor
+                await addDoc(collection(db, CHAT_COLLECTION_PATH), {
+                    userId: currentUserId, // El emisor
+                    type: 'alert',
+                    content: `Alerta enviada a ${recipientName}!`,
+                    recipientId: recipientId, // El ID que debe escuchar el sonido
+                    timestamp: serverTimestamp(),
+                });
+                postSystemMessage(`🔔 Alerta enviada a ${recipientName}.`);
+
+            } catch (e) {
+                console.error("Error al enviar la alerta dirigida: ", e);
+            }
+        }
+
+        /**
          * Envía un dibujo codificado en Base64 a Firestore.
          */
-        window.sendDrawing = async function() { // Hago la función global (window)
+        window.sendDrawing = async function() { 
             if (!db) return;
             
-            // Si el setup está visible, significa que el usuario no tiene nombre
             if (usernameSetup.classList.contains('hidden') === false) {
                  postSystemMessage("¡ERROR! Debes configurar un nombre de usuario primero para compartir dibujos.");
                 return;
@@ -474,7 +534,6 @@
             const dataURL = drawingCanvas.toDataURL();
 
             try {
-                // El dibujo se guarda AQUÍ en la colección CHAT_COLLECTION_PATH
                 await addDoc(collection(db, CHAT_COLLECTION_PATH), {
                     userId: currentUserId,
                     type: 'drawing',
@@ -491,59 +550,78 @@
          * Renderiza un mensaje en el DOM.
          */
         function renderMessage(message) {
-            const { userId, type, content } = message;
+            const { userId, type, content, recipientId } = message;
             const isMe = userId === currentUserId;
             
-            // Usar el nombre de usuario del mapa si existe, sino usar el UID recortado
             const displayName = userMap[userId] || `Usuario: ${userId.substring(0, 8)}...`;
             const headerText = isMe ? currentUsername : displayName;
+            const isAlert = type === 'alert';
 
             const messageDiv = document.createElement('div');
-            // Estilos base de la burbuja: p-3, redondeado, sombra, ancho máximo
             let bubbleClasses = 'p-3 rounded-xl max-w-xs mb-2 shadow-md'; 
             
-            // 1. Definir estilos y alineación de la burbuja (usando auto-margins)
-            if (type === 'text') {
+            if (isAlert) {
+                const targetName = userMap[recipientId] || 'Usuario Desconocido';
+                
+                // Estilo especial para alertas
+                bubbleClasses = 'p-3 rounded-xl max-w-sm mb-2 shadow-lg text-sm italic font-semibold'; 
+                
+                if (isMe) {
+                    // Alerta que yo envié
+                    bubbleClasses += ' bg-red-100 text-red-700 border border-red-300 ml-auto';
+                    messageDiv.textContent = `🚨 (A ${targetName}): ${content}`;
+                } else if (recipientId === currentUserId) {
+                    // Alerta que yo recibí
+                    bubbleClasses += ' bg-yellow-100 text-yellow-800 border-yellow-400 mr-auto animate-pulse';
+                    messageDiv.textContent = `🔔 ¡ALERTA DE ${displayName}!`;
+                } else {
+                    // Alerta a otro usuario (sólo mostramos el evento)
+                    bubbleClasses += ' bg-gray-100 text-gray-500 mr-auto';
+                    messageDiv.textContent = `Alerta enviada a ${targetName} por ${displayName}.`;
+                }
+
+            } else if (type === 'text') {
                 bubbleClasses += isMe 
-                    ? ' bg-indigo-600 text-white ml-auto break-words' // Mío: Fondo índigo, a la derecha
-                    : ' bg-gray-200 text-gray-800 mr-auto break-words'; // Otro: Fondo gris, a la izquierda
-            } else if (type === 'drawing') {
-                // Dibujo: Burbuja blanca, padding reducido, y alineación por auto-margin
-                bubbleClasses = 'bg-white text-gray-800 p-2 rounded-xl max-w-xs mb-2 shadow-lg';
-                bubbleClasses += isMe ? ' ml-auto' : ' mr-auto'; // Alineación del dibujo
-            }
-
-            messageDiv.className = bubbleClasses;
-
-            // 2. Contenido del mensaje (Texto o Dibujo)
-            if (type === 'text') {
+                    ? ' bg-indigo-600 text-white ml-auto break-words' 
+                    : ' bg-gray-200 text-gray-800 mr-auto break-words';
                 messageDiv.textContent = content;
             } else if (type === 'drawing') {
+                bubbleClasses = 'bg-white text-gray-800 p-2 rounded-xl max-w-xs mb-2 shadow-lg';
+                bubbleClasses += isMe ? ' ml-auto' : ' mr-auto'; 
+
                 const img = document.createElement('img');
                 img.src = content;
                 img.className = 'w-48 h-auto rounded-lg shadow-md';
                 messageDiv.appendChild(img);
             }
 
-            // 3. Encabezado con el nombre de usuario
-            const header = document.createElement('div');
-            header.textContent = headerText;
-            
-            // Color y tamaño del header (siempre oscuro)
-            header.className = `font-bold text-xs mb-1 ${isMe ? 'text-indigo-700' : 'text-gray-700'}`;
 
-            const wrapper = document.createElement('div');
-            // 4. Alineación del WRAPPER (flex-col para apilar header y burbuja)
-            wrapper.className = 'flex flex-col ' + (isMe ? 'items-end' : 'items-start');
-            
-            wrapper.appendChild(header);
-            wrapper.appendChild(messageDiv);
-            
-            chatMessages.appendChild(wrapper);
+            // 3. Encabezado con el nombre de usuario (solo para mensajes normales)
+            if (!isAlert || isAlert && isMe) { // Solo mostrar encabezado si no es una alerta general
+                const header = document.createElement('div');
+                header.textContent = isAlert ? `🚨 ${headerText} envió:` : headerText;
+                
+                header.className = `font-bold text-xs mb-1 ${isMe ? 'text-indigo-700' : 'text-gray-700'}`;
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'flex flex-col ' + (isMe ? 'items-end' : 'items-start');
+                
+                wrapper.appendChild(header);
+                wrapper.appendChild(messageDiv);
+                
+                chatMessages.appendChild(wrapper);
+            } else {
+                 // Si es una alerta recibida o general, solo adjuntamos la burbuja
+                 const wrapper = document.createElement('div');
+                 wrapper.className = 'flex flex-col ' + (isMe ? 'items-end' : 'items-start');
+                 wrapper.appendChild(messageDiv);
+                 chatMessages.appendChild(wrapper);
+            }
         }
 
         /**
          * Configura el listener de tiempo real para mensajes.
+         * Se encarga de reproducir el sonido si es una alerta dirigida.
          * @param {boolean} forceRedraw - Si es true, solo limpia y redibuja (usado después de actualizar userMap).
          */
         let isMessageListenerActive = false;
@@ -552,58 +630,81 @@
 
             const messagesQuery = query(
                 collection(db, CHAT_COLLECTION_PATH),
-                orderBy('timestamp', 'asc') // Mantenemos ASC para que los más viejos estén arriba
+                orderBy('timestamp', 'asc') 
             );
             
-            // Si ya está activo, no crear un nuevo listener, solo limpiar si se pide redibujar
             if (isMessageListenerActive && !forceRedraw) return;
 
-            // Si se fuerza el redibujo, obtenemos los datos una sola vez.
-            if (forceRedraw) {
-                 getDocs(messagesQuery).then((snapshot) => {
-                    chatMessages.innerHTML = '';
-                    if (snapshot.empty) postSystemMessage("¡Conectado! Inicia el chat con otras personas.");
+            // Almacenar el último mensaje para evitar el reproceso de toda la lista
+            let lastProcessedTimestamp = null;
+            let initialLoadComplete = false;
 
-                    snapshot.forEach((doc) => {
-                        renderMessage(doc.data());
+            const processSnapshot = (snapshot) => {
+                const wasScrolledToBottom = chatMessages.scrollHeight - chatMessages.scrollTop <= chatMessages.clientHeight + 1;
+                
+                let newMessages = [];
+                let isFullRedraw = true; // Si initialLoadComplete es false, es una carga completa
+
+                if (initialLoadComplete && !forceRedraw) {
+                     // Solo procesar los nuevos cambios desde el último timestamp
+                     isFullRedraw = false;
+                     snapshot.docChanges().forEach(change => {
+                        if (change.type === "added") {
+                            newMessages.push(change.doc.data());
+                        }
                     });
-                    // Scroll después de forzar redibujo
-                    setTimeout(() => {
-                        chatMessages.scrollTop = chatMessages.scrollHeight;
-                    }, 0);
-                }).catch(error => {
+                } else {
+                    // Carga inicial o forzada, limpiar y añadir todo
+                    chatMessages.innerHTML = '';
+                    snapshot.forEach(doc => newMessages.push(doc.data()));
+                }
+
+
+                // Manejo de mensajes de sistema y renderizado
+                if (isFullRedraw) {
+                    if (snapshot.empty) postSystemMessage("¡Conectado! Inicia el chat con otras personas.");
+                
+                    newMessages.forEach(message => {
+                        renderMessage(message);
+                    });
+                } else {
+                    // Si no es un redraw completo, solo agregamos los nuevos
+                     newMessages.forEach(message => {
+                        renderMessage(message);
+                    });
+                }
+                
+                // Lógica de Sonido y Desplazamiento
+                newMessages.forEach(message => {
+                    // 1. Lógica del Sonido: Si es una alerta dirigida a mí
+                    if (message.type === 'alert' && message.recipientId === currentUserId) {
+                        playSound(); // Activar el sonido solo para el receptor
+                    }
+                    // 2. Desplazamiento
+                    if (!isFullRedraw || wasScrolledToBottom) {
+                         setTimeout(() => {
+                            chatMessages.scrollTop = chatMessages.scrollHeight;
+                        }, 0);
+                    }
+                });
+
+                if (newMessages.length > 0) {
+                    lastProcessedTimestamp = newMessages[newMessages.length - 1].timestamp;
+                }
+
+                initialLoadComplete = true;
+                isMessageListenerActive = true;
+            };
+
+            if (forceRedraw) {
+                 getDocs(messagesQuery).then(processSnapshot).catch(error => {
                      console.error("Error al forzar redibujo:", error);
                 });
                 return;
             }
 
-
-            // Listener de onSnapshot para carga en tiempo real y carga inicial
-            onSnapshot(messagesQuery, (snapshot) => {
-                // Verificar si el usuario ya estaba al final del chat antes de actualizar
-                const wasScrolledToBottom = chatMessages.scrollHeight - chatMessages.scrollTop <= chatMessages.clientHeight + 1; // +1px por si acaso
-                
-                chatMessages.innerHTML = ''; // Limpiar mensajes
-
-                // Mostrar un mensaje de bienvenida solo si no hay mensajes
-                if (snapshot.empty) {
-                    postSystemMessage("¡Conectado! Inicia el chat con otras personas.");
-                }
-
-                snapshot.forEach((doc) => {
-                    renderMessage(doc.data());
-                });
-
-                // Scroll al final: si es la primera carga O si el usuario ya estaba al final
-                if (!isMessageListenerActive || wasScrolledToBottom) {
-                    // Usar setTimeout para asegurar que el DOM se renderice antes de desplazarse
-                    setTimeout(() => {
-                         chatMessages.scrollTop = chatMessages.scrollHeight;
-                    }, 0);
-                }
-                
-                isMessageListenerActive = true;
-            }, (error) => {
+            // Listener de onSnapshot para carga en tiempo real
+            onSnapshot(messagesQuery, processSnapshot, (error) => {
                 console.error("Error al escuchar mensajes de Firestore:", error);
                 postSystemMessage("ERROR: No se pudieron cargar los mensajes en tiempo real.", true);
             });
@@ -783,11 +884,12 @@
             });
         }
 
-        window.playSound = function() {
+        // Ahora es solo la función de reproducción, ya no tiene que verificar si es auto-alerta
+        function playSound() {
             startAudioContext();
 
             if (!audioContextStarted) {
-                postSystemMessage(`⚠️ Toca el botón ALERTAR de nuevo para activar el audio.`, true);
+                // No mostrar mensaje de error si no se ha iniciado, pues se llama de forma interna
                 return;
             }
             
@@ -802,7 +904,7 @@
             resizeCanvas();
             initFirebase();
             setStrokeColor(colorPicker.value); 
-            // Guarda el estado inicial en blanco
+            
             setTimeout(() => {
                 clearCanvas(); 
             }, 100);
