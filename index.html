@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Interactivo Compacto</title>
+    <!-- Carga de Tailwind CSS para estilos modernos y responsivos -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Carga de Tone.js para la generación de sonido en tiempo real -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <style>
+        /* Configuración de la fuente Inter y estilos base */
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Estilos del Canvas de Dibujo */
+        #drawingCanvas {
+            border: 2px solid #3b82f6;
+            background-color: #ffffff;
+            touch-action: none; /* Previene el scroll al dibujar en móvil */
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05); /* Sombra más suave */
+        }
+
+        /* Estilos del chat para scroll */
+        #chatMessages {
+            /* Ajustamos la altura para ser más compactos */
+            height: 60vh; 
+            overflow-y: auto;
+            scroll-behavior: smooth;
+        }
+
+        /* Estilo para los mensajes generados (sonidos, dibujos, sistema) */
+        .system-message {
+            background-color: #e0f2fe; /* Azul claro */
+            padding: 8px 12px;
+            border-radius: 12px;
+            margin-bottom: 8px;
+            font-style: italic;
+        }
+        
+        /* Estilo para el color picker */
+        #colorPicker {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            width: 3rem;
+            height: 2.5rem;
+            background: none;
+            border: none;
+            cursor: pointer;
+        }
+        #colorPicker::-webkit-color-swatch {
+            border-radius: 6px;
+            border: 2px solid #ccc;
+        }
+        #colorPicker::-moz-color-swatch {
+            border-radius: 6px;
+            border: 2px solid #ccc;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-4">
+
+    <!-- Contenedor central y compacto (max-w-lg) -->
+    <div class="max-w-lg mx-auto bg-white rounded-xl shadow-2xl overflow-hidden flex flex-col h-full">
+
+        <!-- Encabezado -->
+        <h2 class="text-xl font-bold p-4 bg-indigo-600 text-white rounded-t-xl text-center">
+            💬 Chat Interactivo Multi-Usuario
+        </h2>
+        
+        <!-- Bloque de Configuración de Usuario y Estado -->
+        <div class="bg-indigo-50 text-indigo-800 text-xs p-2 text-center break-words flex flex-col items-center gap-1">
+            <div id="userInfo" class="font-medium">Cargando conexión y perfil...</div>
+            
+            <!-- Configuración de Nombre de Usuario (Inicialmente visible para usuarios nuevos) -->
+            <div id="usernameSetup" class="flex flex-col items-center w-full max-w-sm mx-auto p-2 bg-white rounded-lg shadow-inner border border-indigo-200 hidden">
+                <p id="usernameError" class="text-red-600 text-xs mb-1 hidden"></p>
+                <div class="flex w-full">
+                    <input type="text" id="usernameInput" placeholder="Elige tu nombre (ej: Ana87)" maxlength="15" class="flex-grow p-1 border border-gray-300 rounded-l-md focus:ring-2 focus:ring-indigo-500 text-gray-800 text-sm">
+                    <button onclick="attemptSetUsername()" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-1 px-2 text-sm rounded-r-md transition duration-150">
+                        Guardar
+                    </button>
+                </div>
+                <!-- El ID se mostrará aquí para referencia -->
+                <p class="text-xs text-gray-500 mt-1">Tu ID de Firebase: <span id="userIdShort">...</span></p>
+            </div>
+            
+            <!-- Display del Nombre de Usuario (Visible después de configurado) -->
+            <!-- Ahora es un botón para permitir la edición -->
+            <button id="usernameDisplay" onclick="showUsernameSetup()" class="text-sm font-bold p-1 bg-indigo-200 hover:bg-indigo-300 rounded-lg px-3 transition duration-150 hidden cursor-pointer">
+                <!-- Contenido se actualiza en JS -->
+            </button>
+        </div>
+
+        <!-- Área de Mensajes del Chat -->
+        <div id="chatMessages" class="p-4 flex-grow">
+            <!-- Los mensajes se cargarán aquí por Firestore -->
+        </div>
+
+        <!-- Controles de Input, Dibujo y Sonido (Todo en un solo panel inferior) -->
+        <div class="p-4 border-t border-gray-200">
+            
+            <!-- 1. Input y Controles de Envío/Alerta (Combinados) -->
+            <div class="flex space-x-2 mb-4 items-center">
+                
+                <!-- Input de Texto -->
+                <input type="text" id="messageInput" placeholder="Escribe tu mensaje..." class="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
+                
+                <!-- Botón de Alerta de Sonido (Compacto y con Icono) -->
+                <button onclick="playSound('synth')" 
+                        class="flex-shrink-0 w-12 h-12 flex items-center justify-center 
+                               bg-red-500 hover:bg-red-600 text-white text-xl rounded-full 
+                               shadow-lg transition duration-150 transform hover:scale-105" 
+                        title="Enviar Alerta Sonora">
+                    🚨
+                </button>
+                
+                <!-- Botón de Enviar Mensaje -->
+                <button onclick="sendChatMessage()" class="flex-shrink-0 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-xl transition duration-150">
+                    Enviar
+                </button>
+            </div>
+            
+            <!-- 2. Control de Pizarra (Botón de Toggle) -->
+            <div class="mb-4">
+                <button onclick="toggleDrawingArea()" id="toggleDrawingBtn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 rounded-lg transition duration-150">
+                    ✍️ Abrir Pizarra de Dibujo
+                </button>
+            </div>
+            
+            <!-- 2.1. Área de Dibujo Oculta (MÁS ALTA) -->
+            <div id="drawingArea" class="hidden">
+                <h3 class="font-semibold mt-2 mb-1 text-gray-700">✍️ Pizarra:</h3>
+                
+                <!-- Controles de Dibujo: Color, Borrador, Grosor y Deshacer -->
+                <div class="flex flex-col p-2 mb-2 bg-gray-50 rounded-lg border">
+                    <!-- Fila 1: Color y Grosor -->
+                    <div class="flex items-center justify-between mb-2">
+                        <!-- Selector de Color -->
+                        <div class="flex items-center space-x-2">
+                            <span class="text-sm font-medium text-gray-700">Pincel:</span>
+                            <input type="color" id="colorPicker" value="#000000" oninput="setStrokeColor(this.value)" class="w-10 h-10 p-0 border-none rounded-md cursor-pointer">
+                            <button onclick="setStrokeColor(document.getElementById('colorPicker').value)" class="bg-gray-200 hover:bg-gray-300 text-xs font-bold py-1 px-2 rounded-lg transition duration-150">
+                                Reestablecer
+                            </button>
+                        </div>
+                        
+                        <!-- Grosor -->
+                        <div class="flex items-center space-x-2">
+                            <span class="text-sm font-medium text-gray-700 whitespace-nowrap">Grosor:</span>
+                            <input type="range" min="2" max="20" value="4" id="strokeWidth" oninput="setStrokeWidth(this.value)" class="w-20">
+                        </div>
+                    </div>
+
+                    <!-- Fila 2: Borrador y Deshacer/Borrar -->
+                    <div class="flex gap-2 pt-2 border-t border-gray-200">
+                        <button onclick="setEraserMode()" class="flex-grow bg-yellow-100 text-gray-800 font-bold py-1 px-3 rounded-lg transition duration-150 border border-yellow-300 hover:bg-yellow-200">
+                            🧼 Borrador
+                        </button>
+                        <button onclick="undoLastAction()" class="bg-indigo-300 hover:bg-indigo-400 text-white font-bold py-1 px-3 rounded-lg transition duration-150 flex items-center justify-center">
+                            <!-- Flecha curva hacia atrás (&#x21BA;) -->
+                            <span class="text-lg leading-none mr-1">&#x21BA;</span> Deshacer
+                        </button>
+                        <button onclick="clearCanvas()" class="bg-gray-400 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded-lg transition duration-150">
+                            Borrar Todo
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Canvas de Dibujo -->
+                <canvas id="drawingCanvas" width="400" height="250" class="w-full rounded-lg mb-2"></canvas>
+                <div class="flex gap-2 mb-4">
+                    <button onclick="sendDrawing()" class="flex-grow bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 rounded-lg transition duration-150">
+                        Compartir Dibujo
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ************************************ -->
+    <!-- JAVASCRIPT: Lógica del Chat, Dibujo, Audio y FIREBASE -->
+    <!-- ************************************ -->
+    <script type="module">
+        // Importaciones de Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, setLogLevel, getDocs, where, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // ************************************
+        // 1. CONFIGURACIÓN E INICIALIZACIÓN DE FIREBASE
+        // ************************************
+        
+        // ** CONFIGURACIÓN DE FIREBASE PROPORCIONADA POR EL USUARIO **
+        const userProvidedFirebaseConfig = {
+            apiKey: "AIzaSyDz29nVG7QlF7_XbJuDTk3LUZG8yI1MZZc",
+            authDomain: "chat-interactivo-143cf.firebaseapp.com",
+            projectId: "chat-interactivo-143cf",
+            storageBucket: "chat-interactivo-143cf.firebasestorage.app",
+            messagingSenderId: "578717210997",
+            appId: "1:578717210997:web:959e1a48ea7f39c1da9b3c"
+        };
+
+        // Variables globales del entorno
+        // Usamos la configuración del usuario
+        const firebaseConfig = userProvidedFirebaseConfig;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        let db;
+        let auth;
+        let currentUserId = 'unknown'; 
+        let currentUsername = 'Usuario Anónimo'; // Nuevo: Nombre de usuario actual
+        let userMap = {}; // Nuevo: Mapa global de {userId: username} para renderizar mensajes
+        
+        // Constantes de ruta
+        const CHAT_COLLECTION_PATH = `/artifacts/${appId}/public/data/chat_messages`;
+        const USER_PROFILES_COLLECTION_PATH = `/artifacts/${appId}/public/data/user_profiles`;
+
+        // Elementos del DOM
+        const chatMessages = document.getElementById('chatMessages');
+        const messageInput = document.getElementById('messageInput');
+        const userInfoDisplay = document.getElementById('userInfo');
+        const userIdShort = document.getElementById('userIdShort');
+        const usernameSetup = document.getElementById('usernameSetup');
+        const usernameInput = document.getElementById('usernameInput');
+        const usernameError = document.getElementById('usernameError');
+        const usernameDisplay = document.getElementById('usernameDisplay'); // Ahora es un botón
+        const drawingCanvas = document.getElementById('drawingCanvas');
+        const d_ctx = drawingCanvas.getContext('2d');
+        const strokeWidthInput = document.getElementById('strokeWidth');
+        const colorPicker = document.getElementById('colorPicker');
+        
+        // Variables de estado del dibujo
+        let isDrawing = false;
+        let hasDrawn = false;        
+        let currentColor = '#000000'; 
+        let currentWidth = 4;        
+
+        // Historial de estados para Deshacer
+        let drawingHistory = [];
+        const MAX_HISTORY = 15; 
+
+        /**
+         * Inicializa Firebase, autentica al usuario y configura listeners.
+         */
+        async function initFirebase() {
+            try {
+                setLogLevel('debug'); 
+                
+                // VERIFICACIÓN DE CONFIGURACIÓN
+                if (!firebaseConfig || !firebaseConfig.projectId) {
+                    console.error("CRITICAL ERROR: Firebase configuration is missing 'projectId'. Cannot initialize Firebase.");
+                    userInfoDisplay.textContent = `CRITICAL ERROR: Error de configuración de Firebase. No se pudo conectar la base de datos.`;
+                    return; // Detener la ejecución si la configuración es inválida
+                }
+
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Autenticar al usuario
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        currentUserId = user.uid;
+                        userIdShort.textContent = currentUserId; // Muestra el ID completo en el setup
+                        console.log("Usuario autenticado. UID:", currentUserId);
+                        
+                        // Configurar listeners una vez autenticado
+                        setupProfileListener();
+                        setupMessageListener();
+                    } else {
+                        currentUserId = 'anonymous-user';
+                        userInfoDisplay.textContent = `Error de autenticación.`;
+                    }
+                });
+
+            } catch (error) {
+                console.error("Error al inicializar Firebase o autenticar:", error);
+                userInfoDisplay.textContent = `Error: ${error.message}`;
+            }
+        }
+        
+        // ************************************
+        // 2. GESTIÓN DEL NOMBRE DE USUARIO (Manejo de persistencia por UID)
+        // ************************************
+        
+        /**
+         * Muestra el formulario de configuración de nombre de usuario y lo precarga.
+         */
+        window.showUsernameSetup = function() {
+            if (currentUsername && currentUsername !== 'Usuario Anónimo') {
+                usernameInput.value = currentUsername; // Precargar el nombre actual para edición
+            } else {
+                usernameInput.value = '';
+            }
+            usernameDisplay.classList.add('hidden');
+            usernameSetup.classList.remove('hidden');
+            userInfoDisplay.classList.remove('hidden'); 
+            userInfoDisplay.textContent = `ID de sesión: ${currentUserId.substring(0, 8)}... - Editando nombre:`;
+        }
+
+
+        /**
+         * Intenta establecer un nombre de usuario, verificando unicidad.
+         */
+        window.attemptSetUsername = async function() { // Hago la función global (window)
+            const username = usernameInput.value.trim();
+            usernameError.classList.add('hidden'); // Ocultar errores previos
+
+            if (username.length < 3) {
+                usernameError.textContent = "El nombre debe tener al menos 3 caracteres.";
+                usernameError.classList.remove('hidden');
+                return;
+            }
+            if (!/^[a-zA-Z0-9]+$/.test(username)) {
+                usernameError.textContent = "Solo se permiten letras y números (sin espacios).";
+                usernameError.classList.remove('hidden');
+                return;
+            }
+            
+            // Si el nombre no ha cambiado, no hacemos nada y ocultamos el setup
+            if (username === currentUsername) {
+                usernameSetup.classList.add('hidden');
+                usernameDisplay.classList.remove('hidden');
+                userInfoDisplay.classList.add('hidden');
+                return;
+            }
+            
+            if (!db) {
+                postSystemMessage("ERROR: Base de datos no inicializada. Revisa la configuración.");
+                return;
+            }
+
+
+            try {
+                // 1. Verificar unicidad (solo si el nuevo nombre es diferente del actual)
+                const q = query(collection(db, USER_PROFILES_COLLECTION_PATH), where("username", "==", username));
+                const snapshot = await getDocs(q);
+
+                // Si hay resultados Y el ID del resultado no es nuestro ID, entonces está tomado por otra persona
+                if (!snapshot.empty) {
+                    let isTakenByOther = false;
+                    snapshot.forEach(doc => {
+                        if (doc.id !== currentUserId) {
+                            isTakenByOther = true;
+                        }
+                    });
+
+                    if (isTakenByOther) {
+                        usernameError.textContent = `El nombre '${username}' ya está tomado por otro usuario. Elige otro.`;
+                        usernameError.classList.remove('hidden');
+                        return;
+                    }
+                }
+
+                // 2. Guardar el nombre de usuario, asociado al UID
+                const userDocRef = doc(db, USER_PROFILES_COLLECTION_PATH, currentUserId);
+                await setDoc(userDocRef, {
+                    userId: currentUserId,
+                    username: username,
+                    timestamp: serverTimestamp(),
+                });
+
+                // La UI se actualizará automáticamente a través del listener setupProfileListener
+                console.log(`Nombre de usuario '${username}' guardado con éxito y persistente.`);
+            } catch (e) {
+                console.error("Error al establecer el nombre de usuario: ", e);
+                usernameError.textContent = "Error al guardar. Inténtalo de nuevo.";
+                usernameError.classList.remove('hidden');
+            }
+        }
+
+        /**
+         * Escucha los perfiles de usuario en tiempo real para actualizar userMap y la UI.
+         */
+        function setupProfileListener() {
+            if (!db) return;
+
+            onSnapshot(collection(db, USER_PROFILES_COLLECTION_PATH), (snapshot) => {
+                const tempUserMap = {};
+                let userHasProfile = false;
+
+                snapshot.forEach((doc) => {
+                    const profile = doc.data();
+                    tempUserMap[profile.userId] = profile.username;
+
+                    if (profile.userId === currentUserId) {
+                        userHasProfile = true;
+                        currentUsername = profile.username;
+                    }
+                });
+
+                userMap = tempUserMap;
+
+                // Actualizar la interfaz de usuario para reflejar el estado del perfil
+                // Muestra la información de ID en el estado inicial de la carga
+                userInfoDisplay.textContent = `ID de sesión: ${currentUserId.substring(0, 8)}...`;
+
+                if (userHasProfile) {
+                    // Si el usuario tiene un perfil guardado (¡Persistencia!)
+                    usernameSetup.classList.add('hidden');
+                    usernameDisplay.textContent = `¡Estás chateando como: ${currentUsername}! (Click para editar)`;
+                    usernameDisplay.classList.remove('hidden');
+                    userInfoDisplay.classList.add('hidden'); // Ocultar el mensaje genérico
+                    messageInput.placeholder = "Escribe tu mensaje..."; // Restablecer placeholder
+                } else {
+                    // Si el usuario no tiene perfil (primera vez)
+                    usernameDisplay.classList.add('hidden');
+                    usernameSetup.classList.remove('hidden');
+                    userInfoDisplay.classList.remove('hidden'); 
+                    userInfoDisplay.textContent = `ID de sesión: ${currentUserId.substring(0, 8)}... - Por favor, elige tu nombre de usuario:`;
+                    messageInput.placeholder = "Debes elegir un nombre para chatear..."; // Indicación visual
+                }
+
+                // Forzar un redibujo del chat si el userMap ha cambiado (para actualizar nombres antiguos)
+                setupMessageListener(true); 
+
+            }, (error) => {
+                console.error("Error al escuchar perfiles de usuario:", error);
+            });
+        }
+
+
+        // ************************************
+        // 3. FUNCIONES DE CHAT (FIREBASE)
+        // ************************************
+
+        /**
+         * Envía un mensaje de texto a Firestore.
+         */
+        window.sendChatMessage = async function() { // Hago la función global (window)
+            const text = messageInput.value.trim();
+            if (!text || !db) return;
+            
+            // Si el setup está visible, significa que el usuario no tiene nombre
+            if (usernameSetup.classList.contains('hidden') === false) {
+                 postSystemMessage("¡ERROR! Debes configurar un nombre de usuario primero para chatear.");
+                return;
+            }
+
+            try {
+                // El chat se guarda AQUÍ en la colección CHAT_COLLECTION_PATH
+                await addDoc(collection(db, CHAT_COLLECTION_PATH), {
+                    userId: currentUserId,
+                    type: 'text',
+                    content: text,
+                    timestamp: serverTimestamp(),
+                });
+                messageInput.value = '';
+                usernameError.classList.add('hidden'); // Ocultar mensaje de error si existía
+            } catch (e) {
+                console.error("Error al enviar el mensaje: ", e);
+            }
+        }
+
+        /**
+         * Envía un dibujo codificado en Base64 a Firestore.
+         */
+        window.sendDrawing = async function() { // Hago la función global (window)
+            if (!db) return;
+            
+            // Si el setup está visible, significa que el usuario no tiene nombre
+            if (usernameSetup.classList.contains('hidden') === false) {
+                 postSystemMessage("¡ERROR! Debes configurar un nombre de usuario primero para compartir dibujos.");
+                return;
+            }
+            const dataURL = drawingCanvas.toDataURL();
+
+            try {
+                // El dibujo se guarda AQUÍ en la colección CHAT_COLLECTION_PATH
+                await addDoc(collection(db, CHAT_COLLECTION_PATH), {
+                    userId: currentUserId,
+                    type: 'drawing',
+                    content: dataURL, 
+                    timestamp: serverTimestamp(),
+                });
+                clearCanvas(); 
+            } catch (e) {
+                console.error("Error al enviar el dibujo: ", e);
+            }
+        }
+        
+        /**
+         * Renderiza un mensaje en el DOM.
+         */
+        function renderMessage(message) {
+            const { userId, type, content } = message;
+            const isMe = userId === currentUserId;
+            
+            // Usar el nombre de usuario del mapa si existe, sino usar el UID recortado
+            const displayName = userMap[userId] || `Usuario: ${userId.substring(0, 8)}...`;
+            const headerText = isMe ? currentUsername : displayName;
+
+            const messageDiv = document.createElement('div');
+            // Estilos base de la burbuja: p-3, redondeado, sombra, ancho máximo
+            let bubbleClasses = 'p-3 rounded-xl max-w-xs mb-2 shadow-md'; 
+            
+            // 1. Definir estilos y alineación de la burbuja (usando auto-margins)
+            if (type === 'text') {
+                bubbleClasses += isMe 
+                    ? ' bg-indigo-600 text-white ml-auto break-words' // Mío: Fondo índigo, a la derecha
+                    : ' bg-gray-200 text-gray-800 mr-auto break-words'; // Otro: Fondo gris, a la izquierda
+            } else if (type === 'drawing') {
+                // Dibujo: Burbuja blanca, padding reducido, y alineación por auto-margin
+                bubbleClasses = 'bg-white text-gray-800 p-2 rounded-xl max-w-xs mb-2 shadow-lg';
+                bubbleClasses += isMe ? ' ml-auto' : ' mr-auto'; // Alineación del dibujo
+            }
+
+            messageDiv.className = bubbleClasses;
+
+            // 2. Contenido del mensaje (Texto o Dibujo)
+            if (type === 'text') {
+                messageDiv.textContent = content;
+            } else if (type === 'drawing') {
+                const img = document.createElement('img');
+                img.src = content;
+                img.className = 'w-48 h-auto rounded-lg shadow-md';
+                messageDiv.appendChild(img);
+            }
+
+            // 3. Encabezado con el nombre de usuario
+            const header = document.createElement('div');
+            header.textContent = headerText;
+            
+            // Color y tamaño del header (siempre oscuro)
+            header.className = `font-bold text-xs mb-1 ${isMe ? 'text-indigo-700' : 'text-gray-700'}`;
+
+            const wrapper = document.createElement('div');
+            // 4. Alineación del WRAPPER (flex-col para apilar header y burbuja)
+            wrapper.className = 'flex flex-col ' + (isMe ? 'items-end' : 'items-start');
+            
+            wrapper.appendChild(header);
+            wrapper.appendChild(messageDiv);
+            
+            chatMessages.appendChild(wrapper);
+        }
+
+        /**
+         * Configura el listener de tiempo real para mensajes.
+         * @param {boolean} forceRedraw - Si es true, solo limpia y redibuja (usado después de actualizar userMap).
+         */
+        let isMessageListenerActive = false;
+        function setupMessageListener(forceRedraw = false) {
+            if (!db) return;
+
+            const messagesQuery = query(
+                collection(db, CHAT_COLLECTION_PATH),
+                orderBy('timestamp', 'asc') // Mantenemos ASC para que los más viejos estén arriba
+            );
+            
+            // Si ya está activo, no crear un nuevo listener, solo limpiar si se pide redibujar
+            if (isMessageListenerActive && !forceRedraw) return;
+
+            // Si se fuerza el redibujo, obtenemos los datos una sola vez.
+            if (forceRedraw) {
+                 getDocs(messagesQuery).then((snapshot) => {
+                    chatMessages.innerHTML = '';
+                    if (snapshot.empty) postSystemMessage("¡Conectado! Inicia el chat con otras personas.");
+
+                    snapshot.forEach((doc) => {
+                        renderMessage(doc.data());
+                    });
+                    // Scroll después de forzar redibujo
+                    setTimeout(() => {
+                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                    }, 0);
+                }).catch(error => {
+                     console.error("Error al forzar redibujo:", error);
+                });
+                return;
+            }
+
+
+            // Listener de onSnapshot para carga en tiempo real y carga inicial
+            onSnapshot(messagesQuery, (snapshot) => {
+                // Verificar si el usuario ya estaba al final del chat antes de actualizar
+                const wasScrolledToBottom = chatMessages.scrollHeight - chatMessages.scrollTop <= chatMessages.clientHeight + 1; // +1px por si acaso
+                
+                chatMessages.innerHTML = ''; // Limpiar mensajes
+
+                // Mostrar un mensaje de bienvenida solo si no hay mensajes
+                if (snapshot.empty) {
+                    postSystemMessage("¡Conectado! Inicia el chat con otras personas.");
+                }
+
+                snapshot.forEach((doc) => {
+                    renderMessage(doc.data());
+                });
+
+                // Scroll al final: si es la primera carga O si el usuario ya estaba al final
+                if (!isMessageListenerActive || wasScrolledToBottom) {
+                    // Usar setTimeout para asegurar que el DOM se renderice antes de desplazarse
+                    setTimeout(() => {
+                         chatMessages.scrollTop = chatMessages.scrollHeight;
+                    }, 0);
+                }
+                
+                isMessageListenerActive = true;
+            }, (error) => {
+                console.error("Error al escuchar mensajes de Firestore:", error);
+                postSystemMessage("ERROR: No se pudieron cargar los mensajes en tiempo real.", true);
+            });
+        }
+
+
+        // ************************************
+        // 4. LÓGICA DE DIBUJO Y UTILIDADES (Mantenida)
+        // ************************************
+
+        function saveState() {
+            const dataURL = drawingCanvas.toDataURL();
+            drawingHistory.push(dataURL);
+            
+            if (drawingHistory.length > MAX_HISTORY) {
+                drawingHistory.shift();
+            }
+        }
+        
+        function restoreState(dataURL) {
+            const img = new Image();
+            img.onload = function() {
+                d_ctx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+                d_ctx.drawImage(img, 0, 0);
+            };
+            img.src = dataURL;
+        }
+
+        window.undoLastAction = function() {
+            if (drawingHistory.length <= 1) {
+                clearCanvas();
+                return;
+            }
+            drawingHistory.pop(); 
+            const lastState = drawingHistory[drawingHistory.length - 1];
+            restoreState(lastState);
+            console.log(`Deshacer realizado. ${drawingHistory.length} estados restantes.`);
+        }
+
+        // Controles de Dibujo
+        window.setStrokeColor = function(color) {
+            currentColor = color;
+            currentWidth = parseInt(strokeWidthInput.value);
+            d_ctx.strokeStyle = currentColor;
+            d_ctx.lineWidth = currentWidth;
+        }
+
+        window.setEraserMode = function() {
+            currentColor = '#FFFFFF';
+            currentWidth = 12;
+            d_ctx.strokeStyle = currentColor;
+            d_ctx.lineWidth = currentWidth;
+        }
+        
+        window.setStrokeWidth = function(width) {
+            currentWidth = parseInt(width);
+            d_ctx.lineWidth = currentWidth;
+            
+            if (currentColor === '#FFFFFF') {
+                d_ctx.strokeStyle = '#FFFFFF';
+            } else {
+                d_ctx.strokeStyle = currentColor;
+            }
+        }
+
+        // Lógica del Canvas
+        function resizeCanvas() {
+            const containerWidth = document.querySelector('.max-w-lg').clientWidth - 40; 
+            drawingCanvas.width = containerWidth;
+            d_ctx.lineWidth = currentWidth;
+            d_ctx.lineCap = 'round';
+            d_ctx.strokeStyle = currentColor;
+        }
+
+        window.toggleDrawingArea = function() {
+            const drawingArea = document.getElementById('drawingArea');
+            const toggleBtn = document.getElementById('toggleDrawingBtn');
+            const isHidden = drawingArea.classList.contains('hidden');
+
+            if (isHidden) {
+                drawingArea.classList.remove('hidden');
+                toggleBtn.textContent = '❌ Cerrar Pizarra de Dibujo';
+                resizeCanvas(); 
+                setStrokeColor(colorPicker.value);
+            } else {
+                drawingArea.classList.add('hidden');
+                toggleBtn.textContent = '✍️ Abrir Pizarra de Dibujo';
+            }
+        }
+        
+        function postSystemMessage(text) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'system-message';
+            messageDiv.textContent = text;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function getMousePos(canvas, event) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = event.touches ? event.touches[0].clientX : event.clientX;
+            const clientY = event.touches ? event.touches[0].clientY : event.clientY;
+
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        }
+
+        messageInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendChatMessage();
+            }
+        });
+
+        function startDrawing(e) {
+            isDrawing = true;
+            hasDrawn = false;
+            d_ctx.beginPath();
+            const pos = getMousePos(drawingCanvas, e);
+            d_ctx.moveTo(pos.x, pos.y);
+            e.preventDefault();
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            hasDrawn = true;
+            const pos = getMousePos(drawingCanvas, e);
+            d_ctx.lineTo(pos.x, pos.y);
+            d_ctx.stroke();
+            e.preventDefault();
+        }
+
+        function stopDrawing() {
+            if (isDrawing && hasDrawn) {
+                saveState();
+            }
+            isDrawing = false;
+        }
+
+        drawingCanvas.addEventListener('mousedown', startDrawing);
+        drawingCanvas.addEventListener('mousemove', draw);
+        drawingCanvas.addEventListener('mouseup', stopDrawing);
+        drawingCanvas.addEventListener('mouseout', stopDrawing);
+        drawingCanvas.addEventListener('touchstart', startDrawing);
+        drawingCanvas.addEventListener('touchmove', draw);
+        drawingCanvas.addEventListener('touchend', stopDrawing);
+
+        window.clearCanvas = function() {
+            d_ctx.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
+            drawingHistory = [];
+            saveState(); 
+        }
+
+        // ************************************
+        // 5. LÓGICA DE SONIDOS (Tone.js)
+        // ************************************
+        
+        let audioContextStarted = false;
+
+        const synth = new Tone.Synth({
+            oscillator: { type: "square" }, 
+            envelope: { 
+                attack: 0.01,
+                release: 0.3
+            }
+        }).toDestination();
+        
+        function startAudioContext() {
+            if (audioContextStarted) return;
+            
+            Tone.start().then(() => {
+                audioContextStarted = true;
+                console.log("Audio activado.");
+            }).catch(e => {
+                console.error("Error starting audio context:", e);
+            });
+        }
+
+        window.playSound = function() {
+            startAudioContext();
+
+            if (!audioContextStarted) {
+                postSystemMessage(`⚠️ Toca el botón ALERTAR de nuevo para activar el audio.`, true);
+                return;
+            }
+            
+            const now = Tone.now();
+            synth.triggerAttackRelease("C5", "4n", now);
+        }
+
+        // ************************************
+        // 6. INICIALIZACIÓN PRINCIPAL
+        // ************************************
+        window.onload = function() {
+            resizeCanvas();
+            initFirebase();
+            setStrokeColor(colorPicker.value); 
+            // Guarda el estado inicial en blanco
+            setTimeout(() => {
+                clearCanvas(); 
+            }, 100);
+            
+            console.log("Aplicación de chat interactivo multi-usuario cargada.");
+        }
+    </script>
+</body>
+</html>
