@@ -100,20 +100,17 @@
         <!-- Controles de Input, Dibujo y Sonido (Todo en un solo panel inferior) -->
         <div class="p-4 border-t border-gray-200">
             
-            <!-- 1. Input y Controles de Envío/Alerta (Combinados) -->
-            <div class="flex space-x-2 mb-4 items-center">
+            <!-- 1. Input y Controles de Envío/Alerta (Organizados en GRID para Responsividad) -->
+            <div class="grid grid-cols-1 md:grid-cols-1 gap-2 mb-4">
                 
-                <!-- Input de Texto -->
-                <input type="text" id="messageInput" placeholder="Escribe tu mensaje..." class="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
-                
-                <!-- Contenedor para Alerta Dirigida -->
-                <div class="flex items-center space-x-1">
+                <!-- Fila 1: Selectores de Alerta -->
+                <div class="flex gap-2 items-center">
                     <!-- Selector de Usuario -->
-                    <select id="alertRecipientSelect" class="p-2 border border-gray-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-red-500 min-w-28">
-                        <option value="" disabled selected>Selecciona receptor</option>
+                    <select id="alertRecipientSelect" class="flex-grow p-2 border border-gray-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-red-500">
+                        <!-- Opciones cargadas por JS -->
                     </select>
                     
-                    <!-- Botón de Alerta de Sonido (Ahora llama a sendTargetedAlert) -->
+                    <!-- Botón de Alerta de Sonido -->
                     <button onclick="sendTargetedAlert()" 
                             class="flex-shrink-0 w-12 h-12 flex items-center justify-center 
                                 bg-red-500 hover:bg-red-600 text-white text-xl rounded-full 
@@ -122,11 +119,17 @@
                         🚨
                     </button>
                 </div>
-                
-                <!-- Botón de Enviar Mensaje -->
-                <button onclick="sendChatMessage()" class="flex-shrink-0 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-xl transition duration-150">
-                    Enviar
-                </button>
+
+                <!-- Fila 2: Input de Mensaje y Botón de Enviar -->
+                <div class="flex gap-2 items-center">
+                    <!-- Input de Texto -->
+                    <input type="text" id="messageInput" placeholder="Escribe tu mensaje..." class="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
+                    
+                    <!-- Botón de Enviar Mensaje -->
+                    <button onclick="sendChatMessage()" class="flex-shrink-0 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-xl transition duration-150">
+                        Enviar
+                    </button>
+                </div>
             </div>
             
             <!-- 2. Control de Pizarra (Botón de Toggle) -->
@@ -385,19 +388,13 @@
         function populateRecipientSelector() {
             alertRecipientSelect.innerHTML = '';
             
-            const defaultOption = document.createElement('option');
-            defaultOption.value = '';
-            defaultOption.textContent = 'Selecciona receptor';
-            defaultOption.disabled = true;
-            defaultOption.selected = true;
-            alertRecipientSelect.appendChild(defaultOption);
-
-            // NUEVO: Opción de Broadcast
+            // NUEVO: Opción de Broadcast (Seleccionada por defecto)
             const broadcastOption = document.createElement('option');
             broadcastOption.value = BROADCAST_ID;
             broadcastOption.textContent = '🚨 Todos (Broadcast)';
+            broadcastOption.selected = true; // Seleccionado por defecto
             alertRecipientSelect.appendChild(broadcastOption);
-
+            
             // Opción para auto-alerta (útil para pruebas)
             const selfOption = document.createElement('option');
             selfOption.value = currentUserId;
@@ -412,6 +409,16 @@
                     option.textContent = userMap[userId];
                     alertRecipientSelect.appendChild(option);
                 }
+            }
+
+             // Opción por defecto no seleccionable (solo para el caso de que no haya usuarios)
+            const defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.textContent = 'Selecciona receptor';
+            defaultOption.disabled = true;
+            if (alertRecipientSelect.options.length === 0) {
+                 alertRecipientSelect.appendChild(defaultOption);
+                 defaultOption.selected = true;
             }
         }
 
