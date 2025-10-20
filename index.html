@@ -223,6 +223,7 @@
         // Constantes de ruta
         const CHAT_COLLECTION_PATH = `/artifacts/${appId}/public/data/chat_messages`;
         const USER_PROFILES_COLLECTION_PATH = `/artifacts/${appId}/public/data/user_profiles`;
+        const BROADCAST_ID = 'broadcast'; // ID especial para alertas a todos
 
         // Elementos del DOM
         const chatMessages = document.getElementById('chatMessages');
@@ -379,7 +380,7 @@
         }
 
         /**
-         * Rellena el selector de destinatarios con los usuarios activos.
+         * Rellena el selector de destinatarios con los usuarios activos y la opción 'Todos'.
          */
         function populateRecipientSelector() {
             alertRecipientSelect.innerHTML = '';
@@ -390,6 +391,12 @@
             defaultOption.disabled = true;
             defaultOption.selected = true;
             alertRecipientSelect.appendChild(defaultOption);
+
+            // NUEVO: Opción de Broadcast
+            const broadcastOption = document.createElement('option');
+            broadcastOption.value = BROADCAST_ID;
+            broadcastOption.textContent = '🚨 Todos (Broadcast)';
+            alertRecipientSelect.appendChild(broadcastOption);
 
             // Opción para auto-alerta (útil para pruebas)
             const selfOption = document.createElement('option');
@@ -503,15 +510,13 @@
                 return;
             }
             
-            // Note: El mensaje de sistema para el remitente ha sido eliminado.
-            
             try {
                 // Mensaje especial de tipo 'alert' con el ID del receptor
                 await addDoc(collection(db, CHAT_COLLECTION_PATH), {
                     userId: currentUserId, // El emisor
                     type: 'alert',
-                    content: `¡Alerta!`, // Contenido simple
-                    recipientId: recipientId, // El ID que debe escuchar el sonido
+                    content: `¡Alerta!`, 
+                    recipientId: recipientId, // El ID que debe escuchar el sonido o 'broadcast'
                     timestamp: serverTimestamp(),
                 });
 
@@ -560,20 +565,23 @@
             
             const displayName = userMap[userId] || `Usuario: ${userId.substring(0, 8)}...`;
             const headerText = isMe ? currentUsername : displayName;
+            const isBroadcast = recipientId === BROADCAST_ID;
 
             const messageDiv = document.createElement('div');
             let bubbleClasses = 'p-3 rounded-xl max-w-xs mb-2 shadow-md'; 
             
             if (isAlert) {
-                const targetName = userMap[recipientId] || 'Usuario Desconocido';
+                const targetName = isBroadcast ? 'TODOS' : (userMap[recipientId] || 'Usuario Desconocido');
                 
                 // Estilo especial para alertas
                 bubbleClasses = 'p-3 rounded-xl max-w-sm mb-2 shadow-lg text-sm italic font-semibold'; 
                 
-                if (recipientId === currentUserId) {
-                    // Alerta que yo recibí
+                // Criterio de Recepción Visual: Es para mí O es broadcast
+                if (recipientId === currentUserId || isBroadcast) {
+                    // Alerta que yo recibí (directa o broadcast)
+                    const alertText = isBroadcast ? `🚨 ¡ALERTA GENERAL de ${displayName}!` : `🔔 ¡ALERTA DIRECTA de ${displayName}!`;
                     bubbleClasses += ' bg-yellow-100 text-yellow-800 border-yellow-400 mr-auto animate-pulse';
-                    messageDiv.textContent = `🔔 ¡ALERTA DE ${displayName}!`;
+                    messageDiv.textContent = alertText;
                 } else {
                     // Alerta enviada a otro usuario (solo mostramos el evento)
                     bubbleClasses += ' bg-gray-100 text-gray-500 mr-auto';
@@ -650,8 +658,11 @@
                             const isFromOtherUser = message.userId !== currentUserId;
                             
                             if (isFromOtherUser) {
-                                if (message.type === 'alert' && message.recipientId === currentUserId) {
-                                     // Alerta dirigida a mí (sonido fuerte)
+                                // Criterio de sonido de alerta: Es para mí O es broadcast
+                                if (message.type === 'alert' && 
+                                   (message.recipientId === currentUserId || message.recipientId === BROADCAST_ID)) 
+                                {
+                                     // Alerta dirigida a mí o broadcast (sonido fuerte)
                                     playSound(); 
                                 } else if (message.type === 'text' || message.type === 'drawing') {
                                     // Mensaje normal de otro usuario (sonido sutil)
@@ -865,11 +876,17 @@
             }
         }).toDestination();
         
-        // Synth para NOTIFICACIÓN SUAVE (PluckSynth, Subtle Pop)
-        const notificationSynth = new Tone.PluckSynth({
-            attackNoise: 1,
-            dampening: 4000,
-            resonance: 0.7
+        // Synth para NOTIFICACIÓN MEJORADO (MembraneSynth, Más cuerpo)
+        const notificationSynth = new Tone.MembraneSynth({
+            "pitchDecay": 0.008,
+            "octaves": 2,
+            "envelope": {
+                "attack": 0.001,
+                "decay": 0.4,
+                "sustain": 0.01,
+                "release": 0.05,
+            },
+            "volume": -10 // Volumen ajustado para ser sutil
         }).toDestination();
         
         function startAudioContext() {
@@ -895,7 +912,7 @@
             alertSynth.triggerAttackRelease("C5", "4n", now);
         }
 
-        // Reproduce el sonido de notificación sutil
+        // Reproduce el sonido de notificación sutil (mejorado)
         function playNotificationSound() {
             startAudioContext();
 
@@ -904,7 +921,8 @@
             }
             
             const now = Tone.now();
-            notificationSynth.triggerAttackRelease("G4", 0.1, now);
+            // Trigger Attack con una nota específica para el "pop"
+            notificationSynth.triggerAttackRelease("C3", 0.2, now); 
         }
 
 
