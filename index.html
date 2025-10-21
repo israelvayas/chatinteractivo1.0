@@ -40,6 +40,9 @@
             <h1 class="text-3xl font-extrabold text-gray-900 flex items-center">
                 💬 Chat Interactivo
                 <span id="userIdShort" class="ml-4 text-xs font-mono bg-gray-200 text-gray-600 px-2 py-1 rounded"></span>
+                <button id="signOutBtn" onclick="signOutUser()" class="ml-4 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-1 px-3 rounded-lg text-sm transition hidden">
+                    Cerrar Sesión
+                </button>
             </h1>
             <p id="userInfo" class="text-sm text-gray-500 mt-1">Cargando...</p>
             <div id="usernameDisplay" class="mt-2 text-sm text-indigo-700 font-semibold cursor-pointer hidden" onclick="showUsernameSetup()"></div>
@@ -51,7 +54,7 @@
             </div>
         </header>
 
-        <div id="chat-list-view" class="bg-white rounded-xl shadow-lg p-4 transition-transform duration-300">
+        <div id="chat-list-view" class="bg-white rounded-xl shadow-lg p-4 transition-transform duration-300 hidden">
             <h3 class="text-xl font-bold mb-4 border-b pb-2 text-gray-800">Chats Disponibles</h3>
             <button onclick="showNewChatModal()" class="w-full bg-green-600 text-white font-bold py-2 rounded-lg hover:bg-green-700 transition mb-4">
                 ➕ Iniciar Nuevo Chat Privado
@@ -130,10 +133,37 @@
         </div>
     </div>
 
+    <div id="authModal" class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
+        <div class="bg-white rounded-xl shadow-2xl p-8 w-96">
+            <h4 class="text-2xl font-extrabold mb-4 text-gray-900 text-center">Bienvenido al Chat</h4>
+            <p class="text-sm text-gray-600 mb-6 text-center">Inicia sesión para conservar tu perfil en todos tus dispositivos.</p>
+
+            <input type="email" id="authEmail" placeholder="Email" 
+                   class="w-full p-3 border border-gray-300 rounded-lg mb-3 focus:ring-indigo-500 focus:border-indigo-500">
+            <input type="password" id="authPassword" placeholder="Contraseña" 
+                   class="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-indigo-500 focus:border-indigo-500">
+            
+            <p id="authError" class="text-red-500 text-xs mb-3 hidden"></p>
+
+            <button onclick="handleAuth('login')" class="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 transition mb-3">
+                Iniciar Sesión
+            </button>
+            <button onclick="handleAuth('register')" class="w-full bg-green-600 text-white font-bold py-3 rounded-lg hover:bg-green-700 transition mb-4">
+                Registrarme
+            </button>
+            
+            <button onclick="signInAnonymouslyUser()" class="w-full text-gray-600 font-semibold py-2 rounded-lg border border-gray-300 hover:bg-gray-100 transition">
+                Continuar como Anónimo (Sin persistencia)
+            </button>
+        </div>
+    </div>
+
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, setLogLevel, getDocs, where, doc, setDoc, updateDoc, arrayUnion, arrayRemove, getDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // Importación de funciones específicas para Email/Password
+        import { getAuth, signInAnonymously, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, getDocs, where, doc, setDoc, updateDoc, arrayUnion, arrayRemove, getDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // ***************************************************************************************************
         // CONFIGURACIÓN DE FIREBASE (Configuración fija del usuario)
@@ -171,9 +201,14 @@
         const imageZoomModal = document.getElementById('imageZoomModal'), zoomedImage = document.getElementById('zoomedImage');
         const confirmModal = document.getElementById('confirmModal'), confirmTitle = document.getElementById('confirmTitle');
         const confirmMessage = document.getElementById('confirmMessage'), confirmExecuteBtn = document.getElementById('confirmExecuteBtn');
-        // NUEVAS REFERENCIAS PARA EL MODAL DE NUEVO CHAT
         const newChatModal = document.getElementById('newChatModal');
         const userListForNewChat = document.getElementById('userListForNewChat');
+        // NUEVAS REFERENCIAS DE AUTH
+        const authModal = document.getElementById('authModal');
+        const authEmail = document.getElementById('authEmail');
+        const authPassword = document.getElementById('authPassword');
+        const authError = document.getElementById('authError');
+        const signOutBtn = document.getElementById('signOutBtn');
         
         let isDrawing = false, hasDrawn = false, currentColor = '#000000', currentWidth = 4;
         let drawingHistory = [], MAX_HISTORY = 15;
@@ -186,22 +221,104 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
-                await signInAnonymously(auth); 
-                
+                // *** CAMBIO CLAVE: Observar el estado de autenticación ***
                 onAuthStateChanged(auth, user => {
                     if (user) {
                         currentUserId = user.uid;
-                        userIdShort.textContent = currentUserId.substring(0, 12) + '...'; 
+                        userIdShort.textContent = user.isAnonymous ? "Anónimo..." : user.email.substring(0, 15) + '...'; 
+                        userInfoDisplay.textContent = user.isAnonymous ? "Sesión: Anónima" : `Sesión: Persistente (${user.email})`;
+                        authModal.classList.add('hidden');
+                        chatListView.classList.remove('hidden');
+                        signOutBtn.classList.remove('hidden');
+
                         setupProfileListener();
                         setupMessageListener();
-                    } else userInfoDisplay.textContent = `Authentication Error.`;
+                    } else {
+                        // Si no hay usuario, forzar a mostrar el modal de autenticación
+                        authModal.classList.remove('hidden');
+                        chatListView.classList.add('hidden');
+                        signOutBtn.classList.add('hidden');
+                        currentUserId = 'unknown';
+                        userInfoDisplay.textContent = `Sesión: Desconectado`;
+                        userIdShort.textContent = ''; 
+                    }
                 });
+                
             } catch (error) { 
                 console.error("Firebase Init/Auth Error:", error); 
                 userInfoDisplay.textContent = `Error: ${error.message}`; 
             }
         }
         
+        // ************************************
+        // NUEVAS FUNCIONES DE AUTH
+        // ************************************
+
+        window.handleAuth = async (mode) => {
+            const email = authEmail.value.trim();
+            const password = authPassword.value.trim();
+            authError.classList.add('hidden');
+
+            if (!email || password.length < 6) {
+                authError.textContent = "Email no válido o contraseña (mínimo 6 caracteres).";
+                authError.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                if (mode === 'register') {
+                    await createUserWithEmailAndPassword(auth, email, password);
+                    // El onAuthStateChanged se disparará automáticamente al registrar
+                } else if (mode === 'login') {
+                    await signInWithEmailAndPassword(auth, email, password);
+                    // El onAuthStateChanged se disparará automáticamente al logear
+                }
+            } catch (error) {
+                let errorMessage = "Error de autenticación.";
+                if (error.code === 'auth/email-already-in-use') {
+                    errorMessage = "Este email ya está registrado. Intenta iniciar sesión.";
+                } else if (error.code === 'auth/invalid-email' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+                    errorMessage = "Credenciales inválidas. Verifica tu email y contraseña.";
+                } else if (error.code === 'auth/weak-password') {
+                    errorMessage = "La contraseña debe tener al menos 6 caracteres.";
+                }
+                console.error("Auth Error:", error);
+                authError.textContent = errorMessage;
+                authError.classList.remove('hidden');
+            }
+        }
+        
+        window.signInAnonymouslyUser = async () => {
+            try {
+                await signInAnonymously(auth);
+                // El onAuthStateChanged se disparará al iniciar sesión anónima
+            } catch (error) {
+                console.error("Error al iniciar sesión anónima:", error);
+                authError.textContent = "Error al intentar continuar como anónimo. Inténtalo más tarde.";
+                authError.classList.remove('hidden');
+            }
+        }
+
+        window.signOutUser = async () => {
+            try {
+                await signOut(auth);
+                // Limpiar el estado local para asegurar que el usuario anónimo no persista
+                currentUserId = 'unknown';
+                currentUsername = 'Usuario Anónimo';
+                userMap = {};
+                chatStateMap = { 'public': { unreadCount: 0, lastMessagePreview: 'Empieza a chatear.' } };
+                chatMessages.innerHTML = '';
+                showChatList();
+                // El onAuthStateChanged mostrará el modal de login
+            } catch (error) {
+                console.error("Error al cerrar sesión:", error);
+            }
+        }
+
+        // ************************************
+        // LÓGICA DE USUARIOS Y CHAT (Mantenida)
+        // ************************************
+
         window.showUsernameSetup = () => {
             usernameInput.value = (currentUsername !== 'Usuario Anónimo') ? currentUsername : '';
             usernameDisplay.classList.add('hidden');
@@ -224,6 +341,7 @@
                     usernameError.classList.remove('hidden'); return;
                 }
                 
+                // Asegura la creación o actualización del perfil con el ID de usuario persistente
                 await setDoc(doc(db, USER_PROFILES_COLLECTION_PATH, currentUserId), { userId: currentUserId, username: username, timestamp: serverTimestamp() });
             } catch (e) { 
                 console.error("Error setting username:", e); 
@@ -332,7 +450,14 @@
                 }
                 // *** FIN CORRECCIÓN DE ROBUSTEZ ***
 
-                userInfoDisplay.textContent = `ID: ${currentUserId.substring(0, 8)}...`;
+                // Si el usuario es persistente, mostramos su email. Si es anónimo, mostramos el ID.
+                const authUser = auth.currentUser;
+                if(authUser && !authUser.isAnonymous) {
+                    userInfoDisplay.textContent = `Email: ${authUser.email}`;
+                } else {
+                    userInfoDisplay.textContent = `ID: ${currentUserId.substring(0, 8)}... (Anónimo)`;
+                }
+
                 if (userHasProfile) {
                     usernameSetup.classList.add('hidden');
                     usernameDisplay.textContent = `Chateando como: ${currentUsername} (Click para editar)`;
@@ -641,7 +766,7 @@
         }
         
         // ************************************
-        // LÓGICA DE NUEVO CHAT (Implementada)
+        // LÓGICA DE NUEVO CHAT
         // ************************************
         
         window.showNewChatModal = () => {
