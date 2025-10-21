@@ -145,6 +145,9 @@
             
             <p id="authError" class="text-red-500 text-xs mb-3 hidden"></p>
 
+            <button onclick="resetPassword()" class="w-full text-sm text-indigo-600 hover:text-indigo-800 font-semibold mb-4 focus:outline-none text-right pr-1">
+                ¿Olvidaste tu contraseña?
+            </button> 
             <button onclick="handleAuth('login')" class="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 transition mb-3">
                 Iniciar Sesión
             </button>
@@ -161,8 +164,8 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        // Importación de funciones específicas para Email/Password
-        import { getAuth, signInAnonymously, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // Importación de funciones específicas para Email/Password, incluyendo sendPasswordResetEmail
+        import { getAuth, signInAnonymously, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, getDocs, where, doc, setDoc, updateDoc, arrayUnion, arrayRemove, getDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // ***************************************************************************************************
@@ -221,7 +224,7 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
-                // *** CAMBIO CLAVE: Observar el estado de autenticación ***
+                // Observar el estado de autenticación
                 onAuthStateChanged(auth, user => {
                     if (user) {
                         currentUserId = user.uid;
@@ -268,10 +271,8 @@
             try {
                 if (mode === 'register') {
                     await createUserWithEmailAndPassword(auth, email, password);
-                    // El onAuthStateChanged se disparará automáticamente al registrar
                 } else if (mode === 'login') {
                     await signInWithEmailAndPassword(auth, email, password);
-                    // El onAuthStateChanged se disparará automáticamente al logear
                 }
             } catch (error) {
                 let errorMessage = "Error de autenticación.";
@@ -291,7 +292,6 @@
         window.signInAnonymouslyUser = async () => {
             try {
                 await signInAnonymously(auth);
-                // El onAuthStateChanged se disparará al iniciar sesión anónima
             } catch (error) {
                 console.error("Error al iniciar sesión anónima:", error);
                 authError.textContent = "Error al intentar continuar como anónimo. Inténtalo más tarde.";
@@ -309,11 +309,46 @@
                 chatStateMap = { 'public': { unreadCount: 0, lastMessagePreview: 'Empieza a chatear.' } };
                 chatMessages.innerHTML = '';
                 showChatList();
-                // El onAuthStateChanged mostrará el modal de login
             } catch (error) {
                 console.error("Error al cerrar sesión:", error);
             }
         }
+
+        // ** FUNCIÓN AGREGADA: RECUPERAR CONTRASEÑA **
+        window.resetPassword = async () => {
+            const email = authEmail.value.trim();
+            authError.classList.add('hidden');
+
+            if (!email) {
+                authError.textContent = "Ingresa tu email para recuperar la contraseña.";
+                authError.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                // Firebase function to send the reset email
+                await sendPasswordResetEmail(auth, email);
+
+                // Success message
+                authError.textContent = `✅ Se ha enviado un enlace de recuperación de contraseña a ${email}. Revisa tu bandeja de entrada.`;
+                authError.classList.remove('hidden');
+                // Limpia los campos
+                authEmail.value = ''; 
+                authPassword.value = ''; 
+
+            } catch (error) {
+                let errorMessage = "Error al intentar recuperar. Asegúrate de que el email es correcto.";
+                if (error.code === 'auth/user-not-found') {
+                    errorMessage = "No hay ningún usuario registrado con este email.";
+                } else if (error.code === 'auth/invalid-email') {
+                    errorMessage = "El formato del email es inválido.";
+                }
+                console.error("Password Reset Error:", error);
+                authError.textContent = `❌ ${errorMessage}`;
+                authError.classList.remove('hidden');
+            }
+        }
+        // **********************************************
 
         // ************************************
         // LÓGICA DE USUARIOS Y CHAT (Mantenida)
