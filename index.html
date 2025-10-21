@@ -88,16 +88,17 @@
 
                 <!-- Controles de Input, Dibujo y Sonido -->
                 <div id="input-controls" class="p-4 border-t border-gray-200">
-                    <div class="grid grid-cols-1 gap-2 mb-4">
-                        <div class="flex gap-2 items-center">
-                            <select id="alertRecipientSelect" class="flex-grow p-2 border border-gray-300 rounded-xl text-sm bg-white focus:ring-2 focus:ring-red-500"></select>
-                            <button onclick="sendTargetedAlert()" class="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white text-xl rounded-full shadow-lg transition duration-150 transform hover:scale-105" title="Enviar Alerta Sonora Dirigida">🚨</button>
-                        </div>
-                        <div class="flex gap-2 items-center">
-                            <input type="text" id="messageInput" placeholder="Escribe tu mensaje..." class="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
-                            <button onclick="sendChatMessage()" class="flex-shrink-0 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-xl transition duration-150">Enviar</button>
-                        </div>
+                    
+                    <!-- Nueva barra de entrada unificada (Alerta, Mensaje, Enviar) -->
+                    <div class="flex gap-2 items-center mb-4">
+                        <!-- Botón de Alerta Contextual -->
+                        <button onclick="sendContextualAlert()" id="contextualAlertBtn" class="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white text-xl rounded-xl shadow-lg transition duration-150 transform hover:scale-105" title="Enviar Alerta Sonora">🚨</button>
+                        
+                        <!-- Input de Mensaje -->
+                        <input type="text" id="messageInput" placeholder="Escribe tu mensaje..." class="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
+                        <button onclick="sendChatMessage()" class="flex-shrink-0 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-xl transition duration-150">Enviar</button>
                     </div>
+
                     <div class="mb-4">
                         <button onclick="toggleDrawingArea()" id="toggleDrawingBtn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 rounded-lg transition duration-150">✍️ Abrir Pizarra de Dibujo</button>
                     </div>
@@ -143,10 +144,14 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, setLogLevel, getDocs, where, doc, setDoc, updateDoc, arrayUnion, arrayRemove, getDoc, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
-        const userProvidedFirebaseConfig = {
+        // ***************************************************************************************************
+        // CONFIGURACIÓN DE FIREBASE (Configuración fija del usuario)
+        // Ya que Canvas está desactivado, usamos la configuración estática.
+        // ***************************************************************************************************
+        const firebaseConfig = {
             apiKey: "AIzaSyDz29nVG7QlF7_XbJuDTk3LUZG8yI1MZZc",
             authDomain: "chat-interactivo-143cf.firebaseapp.com",
             projectId: "chat-interactivo-143cf",
@@ -154,26 +159,25 @@
             messagingSenderId: "578717210997",
             appId: "1:578717210997:web:959e1a48ea7f39c1da9b3c"
         };
-
-        const firebaseConfig = userProvidedFirebaseConfig;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        // Usamos el ID del proyecto como ID base para las colecciones (ya que no hay __app_id)
+        const APP_ID = firebaseConfig.projectId; 
         
         let db, auth, currentUserId = 'unknown', currentUsername = 'Usuario Anónimo', userMap = {};
         let currentChatPartnerId = null, lastSnapshot = null;
         
-        const CHAT_COLLECTION_PATH = `/artifacts/${appId}/public/data/chat_messages`;
-        const USER_PROFILES_COLLECTION_PATH = `/artifacts/${appId}/public/data/user_profiles`;
+        // Rutas de colección adaptadas para uso fuera de Canvas pero con el projectId como base
+        const CHAT_COLLECTION_PATH = `/artifacts/${APP_ID}/public/data/chat_messages`;
+        const USER_PROFILES_COLLECTION_PATH = `/artifacts/${APP_ID}/public/data/user_profiles`;
         const BROADCAST_ID = 'broadcast';
 
-        // DOM Elements
+        // DOM Elements (referencias)
         const chatMessages = document.getElementById('chatMessages'), messageInput = document.getElementById('messageInput');
         const userInfoDisplay = document.getElementById('userInfo'), userIdShort = document.getElementById('userIdShort');
         const usernameSetup = document.getElementById('usernameSetup'), usernameInput = document.getElementById('usernameInput');
         const usernameError = document.getElementById('usernameError'), usernameDisplay = document.getElementById('usernameDisplay');
         const drawingCanvas = document.getElementById('drawingCanvas'), d_ctx = drawingCanvas.getContext('2d');
         const strokeWidthInput = document.getElementById('strokeWidth'), colorPicker = document.getElementById('colorPicker');
-        const alertRecipientSelect = document.getElementById('alertRecipientSelect');
         const chatListView = document.getElementById('chat-list-view'), chatMessagesView = document.getElementById('chat-messages-view');
         const currentChatTitle = document.getElementById('currentChatTitle');
         const imageZoomModal = document.getElementById('imageZoomModal'), zoomedImage = document.getElementById('zoomedImage');
@@ -187,20 +191,27 @@
 
         async function initFirebase() {
             try {
-                setLogLevel('debug'); 
+                // setLogLevel('debug'); // Desactivado para un entorno de producción/local
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
-                if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken); else await signInAnonymously(auth);
+                
+                // Fuera de Canvas, forzamos la autenticación anónima, ya que no hay token
+                await signInAnonymously(auth); 
+                
                 onAuthStateChanged(auth, user => {
                     if (user) {
                         currentUserId = user.uid;
+                        // Mostrar solo los primeros 12 caracteres del ID en modo no-Canvas
                         userIdShort.textContent = currentUserId.substring(0, 12) + '...'; 
                         setupProfileListener();
                         setupMessageListener();
                     } else userInfoDisplay.textContent = `Authentication Error.`;
                 });
-            } catch (error) { console.error("Firebase Init/Auth Error:", error); userInfoDisplay.textContent = `Error: ${error.message}`; }
+            } catch (error) { 
+                console.error("Firebase Init/Auth Error:", error); 
+                userInfoDisplay.textContent = `Error: ${error.message}`; 
+            }
         }
         
         window.showUsernameSetup = () => {
@@ -218,31 +229,26 @@
             }
             if (username === currentUsername) { usernameSetup.classList.add('hidden'); usernameDisplay.classList.remove('hidden'); return; }
             try {
+                // Chequeo de unicidad del nombre de usuario
                 const q = query(collection(db, USER_PROFILES_COLLECTION_PATH), where("username", "==", username));
                 const snapshot = await getDocs(q);
                 if (!snapshot.empty && snapshot.docs.some(doc => doc.id !== currentUserId)) {
                     usernameError.textContent = `El nombre '${username}' ya está en uso.`;
                     usernameError.classList.remove('hidden'); return;
                 }
+                
+                // Guardar perfil de usuario
                 await setDoc(doc(db, USER_PROFILES_COLLECTION_PATH, currentUserId), { userId: currentUserId, username: username, timestamp: serverTimestamp() });
-            } catch (e) { console.error("Error setting username:", e); usernameError.textContent = "Error al guardar. Inténtalo de nuevo."; usernameError.classList.remove('hidden'); }
-        }
-
-        function populateRecipientSelector() {
-            alertRecipientSelect.innerHTML = '';
-            const broadcastOption = document.createElement('option');
-            broadcastOption.value = BROADCAST_ID; broadcastOption.textContent = '🚨 Todos (Broadcast)';
-            alertRecipientSelect.appendChild(broadcastOption);
-            Object.keys(userMap).forEach(userId => {
-                const option = document.createElement('option');
-                option.value = userId; option.textContent = userMap[userId] + (userId === currentUserId ? ' (Tú)' : '');
-                alertRecipientSelect.appendChild(option);
-            });
+            } catch (e) { 
+                console.error("Error setting username:", e); 
+                usernameError.textContent = "Error al guardar. Inténtalo de nuevo. Asegúrate de que las Reglas de Seguridad de Firestore permiten escritura pública en 'user_profiles'."; 
+                usernameError.classList.remove('hidden'); 
+            }
         }
         
         function renderChatList() {
             chatListView.innerHTML = '';
-            // El chat general siempre va primero
+            
             const createChatItem = (id, icon, name, subtext, isDeletable = false) => {
                 const itemDiv = document.createElement('div');
                 itemDiv.className = 'flex items-center justify-between p-3 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors border-b last:border-b-0';
@@ -285,10 +291,10 @@
             deleteAllPublicBtn.onclick = () => showConfirm('global_chat_public', null, 'el historial de mensajes públicos');
             chatListView.appendChild(deleteAllPublicBtn);
 
-            // Botón para eliminar el perfil de usuario (opcional, si el usuario realmente quiere borrar a otro usuario)
+            // Botón para eliminar el perfil de usuario (opcional)
             const deleteProfileBtn = document.createElement('button');
             deleteProfileBtn.className = 'w-full mt-2 bg-gray-200 text-gray-700 border border-gray-400 hover:bg-gray-300 font-bold py-2 rounded-lg transition';
-            deleteProfileBtn.textContent = '❌ Eliminar PERFIL de Usuario (Desaparece la burbuja)';
+            deleteProfileBtn.textContent = '❌ Eliminar PERFIL de Usuario (Admin)';
             deleteProfileBtn.onclick = () => showConfirm('user_profile', null, 'un perfil de usuario (se requiere ID)');
             chatListView.appendChild(deleteProfileBtn);
         }
@@ -301,7 +307,7 @@
                     userMap[profile.userId] = profile.username;
                     if (profile.userId === currentUserId) { userHasProfile = true; currentUsername = profile.username; }
                 });
-                populateRecipientSelector();
+                
                 if (currentChatPartnerId === null) renderChatList();
                 userInfoDisplay.textContent = `ID: ${currentUserId.substring(0, 8)}...`;
                 if (userHasProfile) {
@@ -340,8 +346,14 @@
             const payload = { userId: currentUserId, type, content, isPrivate, timestamp: serverTimestamp() };
             if (isPrivate) payload.recipientId = currentChatPartnerId;
             if (type === 'drawing') payload.reactions = {}; 
-            try { await addDoc(collection(db, CHAT_COLLECTION_PATH), payload); } 
-            catch (e) { console.error(`Error sending ${type}:`, e); }
+            try { 
+                // Asegúrate de que las Reglas de Seguridad permitan esta escritura.
+                await addDoc(collection(db, CHAT_COLLECTION_PATH), payload); 
+            } 
+            catch (e) { 
+                console.error(`Error sending ${type}:`, e); 
+                postSystemMessage(`ERROR: No se pudo enviar el mensaje. Revisa las Reglas de Seguridad de Firestore. Mensaje: ${e.message}`);
+            }
         }
 
         window.sendChatMessage = () => { const text = messageInput.value.trim(); if (text) { sendMessage('text', text); messageInput.value = ''; } }
@@ -352,11 +364,38 @@
             sendMessage('drawing', drawingCanvas.toDataURL()); clearCanvas(); 
         }
 
-        window.sendTargetedAlert = async () => {
-            const recipientId = alertRecipientSelect.value;
-            if (!recipientId || currentUsername === 'Usuario Anónimo') { postSystemMessage("Selecciona destinatario y configura tu nombre."); return; }
-            try { await addDoc(collection(db, CHAT_COLLECTION_PATH), { userId: currentUserId, type: 'alert', recipientId: recipientId, isPrivate: true, timestamp: serverTimestamp() }); } 
-            catch (e) { console.error("Error sending alert: ", e); }
+        window.sendContextualAlert = async () => {
+            if (currentUsername === 'Usuario Anónimo') {
+                postSystemMessage("¡ERROR! Debes configurar un nombre de usuario para enviar alertas."); return;
+            }
+            
+            let recipientId;
+            let isPrivate = false;
+
+            if (currentChatPartnerId === 'public') {
+                recipientId = BROADCAST_ID;
+                isPrivate = false; 
+            } else if (currentChatPartnerId) {
+                recipientId = currentChatPartnerId;
+                isPrivate = true;
+            } else {
+                postSystemMessage("ERROR: No se pudo determinar el destinatario de la alerta.");
+                return;
+            }
+
+            try { 
+                await addDoc(collection(db, CHAT_COLLECTION_PATH), { 
+                    userId: currentUserId, 
+                    type: 'alert', 
+                    recipientId: recipientId, 
+                    isPrivate: isPrivate, 
+                    timestamp: serverTimestamp() 
+                }); 
+            } 
+            catch (e) { 
+                console.error("Error sending contextual alert: ", e); 
+                postSystemMessage(`ERROR: No se pudo enviar la alerta. Revisa las Reglas de Seguridad.`);
+            }
         }
         
         window.addReaction = async (messageId, emoji) => {
@@ -371,7 +410,12 @@
             const updatePayload = {
                 [`reactions.${emoji}`]: userHasReacted ? arrayRemove(currentUserId) : arrayUnion(currentUserId)
             };
-            await updateDoc(messageRef, updatePayload);
+            try {
+                await updateDoc(messageRef, updatePayload);
+            } catch (e) {
+                console.error("Error updating reaction:", e);
+                postSystemMessage(`ERROR: No se pudo añadir la reacción. Revisa las Reglas de Seguridad.`);
+            }
         }
 
         function renderMessage(doc) {
@@ -383,8 +427,20 @@
             
             if (type === 'alert') {
                 const isBroadcast = recipientId === BROADCAST_ID, targetName = isBroadcast ? 'TODOS' : (userMap[recipientId] || 'alguien');
-                messageDiv.className = 'system-message bg-yellow-100 text-yellow-800 animate-pulse';
-                messageDiv.textContent = isBroadcast ? `🚨 ¡ALERTA GENERAL de ${displayName}!` : `🔔 ¡Alerta de ${displayName} para ${targetName}!`;
+                const isPrivateAlertToMe = recipientId === currentUserId && !isBroadcast;
+
+                messageDiv.className = `system-message ${isPrivateAlertToMe ? 'bg-orange-100 text-orange-800' : 'bg-yellow-100 text-yellow-800 animate-pulse'}`;
+
+                if (isMe) {
+                    messageDiv.textContent = isBroadcast ? `🚨 ALERTA GENERAL enviada.` : `🔔 Alerta enviada a ${targetName}.`;
+                } else if (isBroadcast) {
+                    messageDiv.textContent = `🚨 ¡ALERTA GENERAL de ${displayName}!`;
+                } else if (recipientId === currentUserId) {
+                    messageDiv.textContent = `🔔 ¡${displayName} te ha enviado una ALERTA!`;
+                } else {
+                    messageDiv.textContent = `Alerta enviada por ${displayName}.`;
+                }
+
                 wrapper.className = 'w-full';
                 wrapper.appendChild(messageDiv);
             } else {
@@ -450,9 +506,18 @@
                 
                 // Criterio de visualización
                 if (msg.type === 'alert') {
-                    if (msg.recipientId === currentUserId || msg.recipientId === BROADCAST_ID) shouldDisplay = true;
+                    if (currentChatPartnerId === 'public') {
+                        if (msg.recipientId === BROADCAST_ID) shouldDisplay = true;
+                    }
+                    else {
+                        const isSentToPartner = msg.userId === currentUserId && msg.recipientId === currentChatPartnerId;
+                        const isReceivedFromPartner = msg.userId === currentChatPartnerId && msg.recipientId === currentUserId;
+                        
+                        if (isSentToPartner || isReceivedFromPartner) shouldDisplay = true;
+                    }
+
                 } else if (currentChatPartnerId === 'public') {
-                    if (!msg.isPrivate) shouldDisplay = true;
+                    if (msg.isPrivate === false) shouldDisplay = true;
                 } else {
                     const isChatParticipant = (msg.userId === currentUserId && msg.recipientId === currentChatPartnerId) || (msg.userId === currentChatPartnerId && msg.recipientId === currentUserId);
                     if (isChatParticipant) shouldDisplay = true;
@@ -468,21 +533,27 @@
             onSnapshot(messagesQuery, snapshot => {
                 snapshot.docChanges().forEach(change => {
                     const msg = change.doc.data();
+                    
                     if (change.type === "added" && msg.userId !== currentUserId) {
-                        if (msg.type === 'alert' && (msg.recipientId === currentUserId || msg.recipientId === BROADCAST_ID)) playSound();
-                        else if (msg.recipientId === currentUserId) playNotificationSound();
+                        // Lógica de Sonido:
+                        if (msg.type === 'alert') {
+                            if (msg.recipientId === BROADCAST_ID || msg.recipientId === currentUserId) playSound();
+                        }
+                        else {
+                            if (msg.recipientId === currentUserId && msg.isPrivate === true) playNotificationSound(); 
+                            else if (msg.isPrivate === false) playNotificationSound(); 
+                        }
                     }
                 });
                 lastSnapshot = snapshot;
                 if (currentChatPartnerId) processMessages(snapshot);
-            }, e => { console.error("Message listener error:", e); postSystemMessage("ERROR: No se pudieron cargar los mensajes."); });
+            }, e => { console.error("Message listener error:", e); postSystemMessage("ERROR: No se pudieron cargar los mensajes. Revisa las Reglas de Seguridad para esta ruta."); });
         }
 
         // ************************************
-        // 7. LÓGICA DE MODERACIÓN Y ELIMINACIÓN
+        // LÓGICA DE MODERACIÓN Y ELIMINACIÓN
         // ************************************
 
-        // Muestra el modal de confirmación
         function showConfirm(type, payload, name) {
             confirmAction = { type, payload };
             confirmTitle.textContent = `Confirmar Eliminación`;
@@ -495,7 +566,6 @@
                 confirmMessage.innerHTML = `¡ADVERTENCIA! ¿Estás seguro de que quieres **eliminar TODOS los mensajes públicos** (Chat General) de la base de datos? Esta acción es **IRREVERSIBLE** para todos.`;
                 confirmExecuteBtn.textContent = 'Eliminar MENSAJES PÚBLICOS';
             } else if (type === 'user_profile') {
-                // Esto es solo para la demostración, normalmente no deberías borrar perfiles que no sean el tuyo.
                 confirmMessage.innerHTML = `¿Estás seguro de que quieres **eliminar el PERFIL de un usuario**? Se te pedirá su ID. Esto hará que su burbuja de chat desaparezca de la lista (hasta que vuelva a unirse).`;
                 confirmExecuteBtn.textContent = 'Eliminar PERFIL (Admin)';
             }
@@ -525,7 +595,6 @@
             confirmAction = { type: null, payload: null };
         }
 
-        // Elimina todos los mensajes privados entre dos usuarios
         async function deleteUserChatHistory(partnerId, partnerName) {
             try {
                 const q1 = query(collection(db, CHAT_COLLECTION_PATH), where("userId", "==", currentUserId), where("recipientId", "==", partnerId), where("isPrivate", "==", true));
@@ -543,20 +612,18 @@
                 
                 postSystemMessage(`✅ Historial privado con ${partnerName} (${count} mensajes) eliminado. La burbuja de chat permanece, y el historial se reiniciará si te vuelve a escribir.`);
                 
-                // Si estaba en esa conversación, forzar la vista limpia
                 if (currentChatPartnerId === partnerId) {
                     chatMessages.innerHTML = '';
                     postSystemMessage("El historial de esta conversación ha sido borrado.");
                 }
 
-                showChatList(); // Volver a la lista de chats
+                showChatList(); 
             } catch (error) {
                 console.error("Error al eliminar el historial privado:", error);
-                postSystemMessage(`ERROR: No se pudo eliminar el historial privado con ${partnerName}. Consulta la consola.`);
+                postSystemMessage(`ERROR: No se pudo eliminar el historial privado con ${partnerName}. Revisa las Reglas de Seguridad de Firestore para operaciones de eliminación.`);
             }
         }
         
-        // Elimina todos los mensajes públicos (Chat General)
         async function deleteGlobalPublicChatHistory() {
             try {
                 const q = query(collection(db, CHAT_COLLECTION_PATH), where("isPrivate", "==", false));
@@ -581,22 +648,20 @@
                 showChatList();
             } catch (error) {
                 console.error("Error al eliminar el historial público:", error);
-                postSystemMessage(`ERROR: No se pudo eliminar el historial público. Inténtalo de nuevo. (Consulta la consola)`);
+                postSystemMessage(`ERROR: No se pudo eliminar el historial público. Revisa las Reglas de Seguridad de Firestore para operaciones de eliminación.`);
             }
         }
         
-        // Elimina el perfil de usuario (hace desaparecer la burbuja de chat para todos)
         async function deleteUserProfile(userId) {
              try {
                 await deleteDoc(doc(db, USER_PROFILES_COLLECTION_PATH, userId));
                 postSystemMessage(`Perfil de usuario (ID: ${userId.substring(0, 6)}) eliminado de la base de datos. Su burbuja de chat desaparecerá para todos.`);
             } catch (error) {
                 console.error("Error al eliminar el perfil de usuario:", error);
-                postSystemMessage(`ERROR: No se pudo eliminar el perfil. Asegúrate de que el ID es correcto y existe. (Consulta la consola)`);
+                postSystemMessage(`ERROR: No se pudo eliminar el perfil. Asegúrate de que el ID es correcto y existe, y que las Reglas de Seguridad lo permiten.`);
             }
         }
         
-
         function postSystemMessage(message) {
             const wrapper = document.createElement('div');
             const messageDiv = document.createElement('div');
@@ -608,6 +673,10 @@
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
 
+        // ************************************
+        // LÓGICA DE UI, DIBUJO Y AUDIO
+        // ************************************
+
         window.showImageZoom = (src) => { zoomedImage.src = src; imageZoomModal.classList.remove('hidden'); }
         window.hideImageZoom = () => imageZoomModal.classList.add('hidden');
 
@@ -617,9 +686,31 @@
         window.setStrokeColor = color => { currentColor = color; d_ctx.strokeStyle = currentColor; d_ctx.lineWidth = parseInt(strokeWidthInput.value); }
         window.setEraserMode = () => { d_ctx.strokeStyle = '#FFFFFF'; d_ctx.lineWidth = 12; }
         window.setStrokeWidth = width => { d_ctx.lineWidth = parseInt(width); }
-        function resizeCanvas() { drawingCanvas.width = document.querySelector('#drawingArea').clientWidth; d_ctx.lineCap = 'round'; setStrokeColor(colorPicker.value); }
-        window.toggleDrawingArea = () => { const isHidden = document.getElementById('drawingArea').classList.toggle('hidden'); document.getElementById('toggleDrawingBtn').textContent = isHidden ? '✍️ Abrir Pizarra' : '❌ Cerrar Pizarra'; if (!isHidden) resizeCanvas(); }
-        const getPos = (c, e) => { const r = c.getBoundingClientRect(); return { x: (e.touches ? e.touches[0].clientX : e.clientX) - r.left, y: (e.touches ? e.touches[0].clientY : e.clientY) - r.top }; }
+        function resizeCanvas() { 
+            // Guarda el contenido antes de redimensionar
+            const currentDrawing = drawingHistory.length > 0 ? drawingHistory[drawingHistory.length - 1] : null;
+
+            drawingCanvas.width = document.querySelector('#drawingArea').clientWidth; 
+            d_ctx.lineCap = 'round'; 
+            setStrokeColor(colorPicker.value); 
+            
+            // Restaura el contenido después de redimensionar
+            if (currentDrawing) restoreState(currentDrawing);
+            else saveState(); // Asegura que el historial se inicialice si el canvas está vacío
+        }
+        window.toggleDrawingArea = () => { 
+            const drawingArea = document.getElementById('drawingArea');
+            const isHidden = drawingArea.classList.toggle('hidden'); 
+            document.getElementById('toggleDrawingBtn').textContent = isHidden ? '✍️ Abrir Pizarra de Dibujo' : '❌ Cerrar Pizarra de Dibujo'; 
+            if (!isHidden) {
+                resizeCanvas();
+                window.addEventListener('resize', resizeCanvas);
+            } else {
+                window.removeEventListener('resize', resizeCanvas);
+            }
+        }
+
+        const getPos = (c, e) => { const r = c.getBoundingClientRect(); return { x: (e.touches ? e.touches[0].clientX : e.clientX) - r.left, y: (e.touches ? e.touches[0].clientY : e.touches[0].clientY) - r.top }; }
         const startDrawing = e => { isDrawing = true; hasDrawn = false; d_ctx.beginPath(); d_ctx.moveTo(getPos(drawingCanvas, e).x, getPos(drawingCanvas, e).y); e.preventDefault(); }
         const draw = e => { if (!isDrawing) return; hasDrawn = true; d_ctx.lineTo(getPos(drawingCanvas, e).x, getPos(drawingCanvas, e).y); d_ctx.stroke(); e.preventDefault(); }
         const stopDrawing = () => { if (isDrawing && hasDrawn) saveState(); isDrawing = false; }
@@ -632,11 +723,22 @@
         let audioContextStarted = false;
         const alertSynth = new Tone.Synth({ oscillator: { type: "square" }, envelope: { attack: 0.01, release: 0.3 } }).toDestination();
         const notificationSynth = new Tone.MembraneSynth({ pitchDecay: 0.008, octaves: 2, envelope: { attack: 0.001, decay: 0.4, sustain: 0.01, release: 0.05 }, volume: -10 }).toDestination();
-        function startAudioContext() { if (audioContextStarted) return; Tone.start().then(() => { audioContextStarted = true; }).catch(e => console.error("Audio context error:", e)); }
+        
+        function startAudioContext() { 
+            if (audioContextStarted) return; 
+            Tone.start().then(() => { audioContextStarted = true; }).catch(e => console.error("Audio context error:", e)); 
+        }
         function playSound() { startAudioContext(); if (audioContextStarted) alertSynth.triggerAttackRelease("C5", "4n", Tone.now()); }
         function playNotificationSound() { startAudioContext(); if (audioContextStarted) notificationSynth.triggerAttackRelease("C3", 0.2, Tone.now()); }
 
-        window.onload = () => { initFirebase(); setTimeout(clearCanvas, 100); }
+        window.onload = () => { 
+            initFirebase(); 
+            // Inicializar canvas después de un pequeño retraso para asegurar el DOM
+            setTimeout(() => {
+                clearCanvas(); 
+                resizeCanvas();
+            }, 100);
+        }
     </script>
 </body>
 </html>
