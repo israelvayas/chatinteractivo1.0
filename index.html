@@ -4,9 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chat con Control de Historial y Moderación</title>
-    <!-- Carga de Tailwind CSS para estilos modernos y responsivos -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Carga de Tone.js para la generación de sonido en tiempo real -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
     <style>
         /* Configuración de la fuente Inter y estilos base */
@@ -30,114 +28,92 @@
             padding: 8px 12px;
             border-radius: 12px;
             margin-bottom: 8px;
-            font-style: italic;
+            font-size: 0.8rem;
+            color: #0c4a6e;
             text-align: center;
         }
-        
-        #colorPicker {
-            -webkit-appearance: none; -moz-appearance: none; appearance: none;
-            width: 3rem; height: 2.5rem; background: none; border: none; cursor: pointer;
-        }
-        #colorPicker::-webkit-color-swatch { border-radius: 6px; border: 2px solid #ccc; }
-        #colorPicker::-moz-color-swatch { border-radius: 6px; border: 2px solid #ccc; }
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen p-4">
-
-    <!-- Contenedor central y compacto -->
-    <div class="max-w-lg mx-auto bg-white rounded-xl shadow-2xl overflow-hidden flex flex-col h-full">
-
-        <!-- Encabezado Fijo -->
-        <div id="main-header">
-            <h2 class="text-xl font-bold p-4 bg-indigo-600 text-white rounded-t-xl text-center">
+<body class="bg-gray-50">
+    <div class="container mx-auto p-4 max-w-4xl">
+        <header class="mb-6 border-b pb-4">
+            <h1 class="text-3xl font-extrabold text-gray-900 flex items-center">
                 💬 Chat Interactivo
-            </h2>
-            <div class="bg-indigo-50 text-indigo-800 text-xs p-2 text-center break-words flex flex-col items-center gap-1">
-                <div id="userInfo" class="font-medium">Cargando conexión y perfil...</div>
-                <div id="usernameSetup" class="flex flex-col items-center w-full max-w-sm mx-auto p-2 bg-white rounded-lg shadow-inner border border-indigo-200 hidden">
-                    <p id="usernameError" class="text-red-600 text-xs mb-1 hidden"></p>
-                    <div class="flex w-full">
-                        <input type="text" id="usernameInput" placeholder="Elige tu nombre (ej: Ana87)" maxlength="15" class="flex-grow p-1 border border-gray-300 rounded-l-md focus:ring-2 focus:ring-indigo-500 text-gray-800 text-sm">
-                        <button onclick="attemptSetUsername()" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-1 px-2 text-sm rounded-r-md transition duration-150">Guardar</button>
-                    </div>
-                    <p class="text-xs text-gray-500 mt-1">Tu ID: <span id="userIdShort">...</span></p>
-                </div>
-                <button id="usernameDisplay" onclick="showUsernameSetup()" class="text-sm font-bold p-1 bg-indigo-200 hover:bg-indigo-300 rounded-lg px-3 transition duration-150 hidden cursor-pointer"></button>
+                <span id="userIdShort" class="ml-4 text-xs font-mono bg-gray-200 text-gray-600 px-2 py-1 rounded"></span>
+            </h1>
+            <p id="userInfo" class="text-sm text-gray-500 mt-1">Cargando...</p>
+            <div id="usernameDisplay" class="mt-2 text-sm text-indigo-700 font-semibold cursor-pointer hidden" onclick="showUsernameSetup()"></div>
+            <div id="usernameSetup" class="mt-2 hidden">
+                <input type="text" id="usernameInput" placeholder="Elige un nombre de usuario (sin espacios)" 
+                       class="p-2 border border-gray-300 rounded-l-lg w-56 text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                <button onclick="attemptSetUsername()" class="bg-indigo-600 text-white p-2 rounded-r-lg text-sm hover:bg-indigo-700 transition">Establecer</button>
+                <p id="usernameError" class="text-red-500 text-xs mt-1 hidden"></p>
             </div>
-        </div>
+        </header>
 
-        <!-- Contenedor principal que aloja las dos vistas -->
-        <div class="flex flex-col flex-grow">
-            <!-- Vista 1: Lista de Chats (Estilo WhatsApp) -->
-            <div id="chat-list-view" class="p-2 border-t">
-                <!-- El contenido se genera dinámicamente -->
+        <div id="chat-list-view" class="bg-white rounded-xl shadow-lg p-4 transition-transform duration-300">
+            <h3 class="text-xl font-bold mb-4 border-b pb-2 text-gray-800">Chats Disponibles</h3>
             </div>
 
-            <!-- Vista 2: Conversación de Chat Activa -->
-            <div id="chat-messages-view" class="hidden flex flex-col h-full">
-                <!-- Cabecera del chat con botón de volver -->
-                <div class="flex items-center p-2 bg-gray-100 border-b border-t">
-                    <button onclick="showChatList()" class="p-2 rounded-full hover:bg-gray-200 mr-2 transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
-                    </button>
-                    <h3 id="currentChatTitle" class="font-bold text-gray-800 text-lg"></h3>
-                </div>
-
-                <!-- Área de Mensajes -->
-                <div id="chatMessages" class="p-4 flex-grow"></div>
-
-                <!-- Controles de Input, Dibujo y Sonido -->
-                <div id="input-controls" class="p-4 border-t border-gray-200">
-                    
-                    <!-- Nueva barra de entrada unificada (Alerta, Mensaje, Enviar) -->
-                    <div class="flex gap-2 items-center mb-4">
-                        <!-- Botón de Alerta Contextual -->
-                        <button onclick="sendContextualAlert()" id="contextualAlertBtn" class="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white text-xl rounded-xl shadow-lg transition duration-150 transform hover:scale-105" title="Enviar Alerta Sonora">🚨</button>
-                        
-                        <!-- Input de Mensaje -->
-                        <input type="text" id="messageInput" placeholder="Escribe tu mensaje..." class="flex-grow p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500">
-                        <button onclick="sendChatMessage()" class="flex-shrink-0 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-xl transition duration-150">Enviar</button>
-                    </div>
-
-                    <div class="mb-4">
-                        <button onclick="toggleDrawingArea()" id="toggleDrawingBtn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 rounded-lg transition duration-150">✍️ Abrir Pizarra de Dibujo</button>
-                    </div>
-                    <div id="drawingArea" class="hidden">
-                        <h3 class="font-semibold mt-2 mb-1 text-gray-700">✍️ Pizarra:</h3>
-                        <div class="flex flex-col p-2 mb-2 bg-gray-50 rounded-lg border">
-                            <div class="flex items-center justify-between mb-2">
-                                <div class="flex items-center space-x-2"><span class="text-sm font-medium text-gray-700">Pincel:</span><input type="color" id="colorPicker" value="#000000" oninput="setStrokeColor(this.value)"></div>
-                                <div class="flex items-center space-x-2"><span class="text-sm font-medium text-gray-700 whitespace-nowrap">Grosor:</span><input type="range" min="2" max="20" value="4" id="strokeWidth" oninput="setStrokeWidth(this.value)" class="w-20"></div>
-                            </div>
-                            <div class="flex gap-2 pt-2 border-t border-gray-200">
-                                <button onclick="setStrokeColor(document.getElementById('colorPicker').value)" class="bg-gray-200 hover:bg-gray-300 text-xs font-bold py-1 px-2 rounded-lg transition">Pincel</button>
-                                <button onclick="setEraserMode()" class="flex-grow bg-yellow-100 text-gray-800 font-bold py-1 px-3 rounded-lg border border-yellow-300 hover:bg-yellow-200">🧼 Borrador</button>
-                                <button onclick="undoLastAction()" class="bg-indigo-300 hover:bg-indigo-400 text-white font-bold py-1 px-3 rounded-lg flex items-center justify-center"><span class="text-lg leading-none mr-1">&#x21BA;</span> Deshacer</button>
-                                <button onclick="clearCanvas()" class="bg-gray-400 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded-lg">Borrar Todo</button>
-                            </div>
-                        </div>
-                        <canvas id="drawingCanvas" width="400" height="250" class="w-full rounded-lg mb-2"></canvas>
-                        <div class="flex gap-2 mb-4"><button onclick="sendDrawing()" class="flex-grow bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 rounded-lg">Compartir Dibujo</button></div>
-                    </div>
-                </div>
+        <div id="chat-messages-view" class="hidden bg-white rounded-xl shadow-lg p-4 flex flex-col transition-transform duration-300">
+            <div class="flex items-center justify-between mb-4 border-b pb-3">
+                <button onclick="showChatList()" class="text-indigo-600 hover:text-indigo-800 font-semibold text-sm">
+                    ← Volver a Chats
+                </button>
+                <h3 id="currentChatTitle" class="text-xl font-bold text-gray-800"></h3>
+                <button onclick="sendContextualAlert()" title="Enviar una alerta al chat activo o a todos si es General" class="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded-full text-sm transition">
+                    🚨 ¡Alerta!
+                </button>
             </div>
+
+            <div id="chatMessages" class="flex-grow overflow-y-auto mb-4 p-2 border rounded-lg bg-gray-50">
+                </div>
+            
+            <div class="flex mb-4">
+                <input type="text" id="messageInput" placeholder="Escribe tu mensaje..." class="flex-grow p-3 border border-gray-300 rounded-l-lg focus:ring-indigo-500 focus:border-indigo-500">
+                <button onclick="sendChatMessage()" class="bg-indigo-600 text-white p-3 rounded-r-lg hover:bg-indigo-700 transition">
+                    Enviar
+                </button>
+            </div>
+
+            <button onclick="toggleDrawingArea()" id="toggleDrawingBtn" class="w-full bg-gray-200 text-gray-700 border border-gray-300 hover:bg-gray-300 font-bold py-2 mb-4 rounded-lg transition">
+                ✍️ Abrir Pizarra de Dibujo
+            </button>
+
+            <div id="drawingArea" class="hidden border border-dashed border-gray-300 rounded-lg p-2 mb-4 bg-white shadow-inner">
+                <div class="flex justify-between items-center mb-2">
+                    <div class="flex space-x-2">
+                        <input type="color" id="colorPicker" onchange="setStrokeColor(this.value)" value="#000000" class="w-8 h-8 rounded-full border-2 border-gray-300 cursor-pointer">
+                        <input type="range" id="strokeWidth" min="2" max="15" value="4" onchange="setStrokeWidth(this.value)" title="Grosor">
+                        <button onclick="setEraserMode()" class="p-1 rounded-lg text-lg hover:bg-gray-200" title="Borrador">🧼</button>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button onclick="undoLastAction()" class="p-1 rounded-lg text-lg hover:bg-gray-200" title="Deshacer">↩️</button>
+                        <button onclick="clearCanvas()" class="p-1 rounded-lg text-lg hover:bg-gray-200" title="Limpiar">🗑️</button>
+                        <button onclick="sendDrawing()" class="bg-green-500 hover:bg-green-600 text-white font-bold py-1 px-3 rounded-lg transition">
+                            🖼️ Enviar Dibujo
+                        </button>
+                    </div>
+                </div>
+                <canvas id="drawingCanvas" class="w-full h-[400px]"></canvas>
+            </div>
+            
         </div>
     </div>
 
-    <!-- Modal para Zoom de Imagen con Fondo -->
-    <div id="imageZoomModal" class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center p-4 z-50 hidden" onclick="hideImageZoom()">
-        <img id="zoomedImage" src="" class="max-w-full max-h-full rounded-lg shadow-2xl bg-white p-1"> <!-- FONDO BLANCO AÑADIDO -->
-        <button onclick="hideImageZoom()" class="absolute top-5 right-5 text-white text-5xl font-bold leading-none">&times;</button>
+    <div id="imageZoomModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center hidden z-50" onclick="hideImageZoom()">
+        <div class="max-w-4xl max-h-full p-4 bg-white rounded-lg" onclick="event.stopPropagation()">
+            <img id="zoomedImage" src="" alt="Dibujo Ampliado" class="max-w-full max-h-full rounded-lg shadow-2xl">
+        </div>
     </div>
-
-    <!-- Modal para Confirmación de Eliminación (Custom Alert) -->
-    <div id="confirmModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
-        <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full">
-            <h4 class="text-xl font-bold mb-4 text-red-600" id="confirmTitle">Confirmar Acción</h4>
-            <p class="mb-6 text-gray-700" id="confirmMessage"></p>
+    
+    <div id="confirmModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-96">
+            <h4 id="confirmTitle" class="text-xl font-bold mb-3 text-gray-900"></h4>
+            <p id="confirmMessage" class="mb-4 text-gray-700 leading-relaxed"></p>
             <div class="flex justify-end space-x-3">
                 <button onclick="cancelConfirm()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg transition">Cancelar</button>
-                <button onclick="executeConfirm()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition" id="confirmExecuteBtn">Eliminar</button>
+                <button onclick="executeConfirm()" id="confirmExecuteBtn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition">Eliminar</button>
             </div>
         </div>
     </div>
@@ -149,7 +125,6 @@
         
         // ***************************************************************************************************
         // CONFIGURACIÓN DE FIREBASE (Configuración fija del usuario)
-        // Ya que Canvas está desactivado, usamos la configuración estática.
         // ***************************************************************************************************
         const firebaseConfig = {
             apiKey: "AIzaSyDz29nVG7QlF7_XbJuDTk3LUZG8yI1MZZc",
@@ -160,13 +135,14 @@
             appId: "1:578717210997:web:959e1a48ea7f39c1da9b3c"
         };
         
-        // Usamos el ID del proyecto como ID base para las colecciones (ya que no hay __app_id)
         const APP_ID = firebaseConfig.projectId; 
         
         let db, auth, currentUserId = 'unknown', currentUsername = 'Usuario Anónimo', userMap = {};
         let currentChatPartnerId = null, lastSnapshot = null;
+        let chatStateMap = { 
+            'public': { unreadCount: 0, lastMessagePreview: 'Empieza a chatear.' } 
+        };
         
-        // Rutas de colección adaptadas para uso fuera de Canvas pero con el projectId como base
         const CHAT_COLLECTION_PATH = `/artifacts/${APP_ID}/public/data/chat_messages`;
         const USER_PROFILES_COLLECTION_PATH = `/artifacts/${APP_ID}/public/data/user_profiles`;
         const BROADCAST_ID = 'broadcast';
@@ -191,18 +167,15 @@
 
         async function initFirebase() {
             try {
-                // setLogLevel('debug'); // Desactivado para un entorno de producción/local
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
-                // Fuera de Canvas, forzamos la autenticación anónima, ya que no hay token
                 await signInAnonymously(auth); 
                 
                 onAuthStateChanged(auth, user => {
                     if (user) {
                         currentUserId = user.uid;
-                        // Mostrar solo los primeros 12 caracteres del ID en modo no-Canvas
                         userIdShort.textContent = currentUserId.substring(0, 12) + '...'; 
                         setupProfileListener();
                         setupMessageListener();
@@ -229,7 +202,6 @@
             }
             if (username === currentUsername) { usernameSetup.classList.add('hidden'); usernameDisplay.classList.remove('hidden'); return; }
             try {
-                // Chequeo de unicidad del nombre de usuario
                 const q = query(collection(db, USER_PROFILES_COLLECTION_PATH), where("username", "==", username));
                 const snapshot = await getDocs(q);
                 if (!snapshot.empty && snapshot.docs.some(doc => doc.id !== currentUserId)) {
@@ -237,7 +209,6 @@
                     usernameError.classList.remove('hidden'); return;
                 }
                 
-                // Guardar perfil de usuario
                 await setDoc(doc(db, USER_PROFILES_COLLECTION_PATH, currentUserId), { userId: currentUserId, username: username, timestamp: serverTimestamp() });
             } catch (e) { 
                 console.error("Error setting username:", e); 
@@ -251,7 +222,8 @@
             
             const createChatItem = (id, icon, name, subtext, isDeletable = false) => {
                 const itemDiv = document.createElement('div');
-                itemDiv.className = 'flex items-center justify-between p-3 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors border-b last:border-b-0';
+                const isUnread = chatStateMap[id] && chatStateMap[id].unreadCount > 0;
+                itemDiv.className = `flex items-center justify-between p-3 ${isUnread ? 'bg-indigo-50 border-indigo-200' : 'hover:bg-gray-100 border-gray-200'} rounded-lg cursor-pointer transition-colors border-b last:border-b-0`;
                 
                 const infoDiv = document.createElement('div');
                 infoDiv.className = 'flex items-center flex-grow min-w-0';
@@ -259,39 +231,51 @@
                 infoDiv.innerHTML = `<div class="w-10 h-10 bg-indigo-500 text-white rounded-full flex items-center justify-center text-xl mr-3">${icon}</div>
                                      <div class="min-w-0 flex-grow">
                                         <h4 class="font-bold text-gray-800 truncate">${name}</h4>
-                                        <p class="text-xs text-gray-500 truncate">${subtext}</p>
+                                        <p class="text-xs ${isUnread ? 'text-indigo-700 font-semibold' : 'text-gray-500'} truncate">${chatStateMap[id] ? chatStateMap[id].lastMessagePreview : subtext}</p>
                                      </div>`;
                 itemDiv.appendChild(infoDiv);
 
+                const actionContainer = document.createElement('div');
+                actionContainer.className = 'flex items-center space-x-2';
+
+                if (isUnread) {
+                    const countBadge = document.createElement('span');
+                    countBadge.className = 'flex-shrink-0 bg-red-500 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full';
+                    countBadge.textContent = chatStateMap[id].unreadCount;
+                    actionContainer.appendChild(countBadge);
+                }
+
                 if (isDeletable) {
                     const deleteBtn = document.createElement('button');
-                    deleteBtn.className = 'flex-shrink-0 ml-3 text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-100 transition';
+                    deleteBtn.className = 'flex-shrink-0 text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-100 transition';
                     deleteBtn.textContent = '🗑️';
                     deleteBtn.title = `Eliminar historial con ${name} (la burbuja de chat permanecerá)`;
                     deleteBtn.onclick = (e) => { 
                         e.stopPropagation(); 
                         showConfirm('private_chat', id, name);
                     };
-                    itemDiv.appendChild(deleteBtn);
+                    actionContainer.appendChild(deleteBtn);
                 }
                 
+                itemDiv.appendChild(actionContainer);
                 chatListView.appendChild(itemDiv);
             };
 
             createChatItem('public', '💬', 'Chat General', 'Habla con todos los usuarios');
 
             Object.keys(userMap).forEach(userId => {
+                if (userId !== currentUserId && !chatStateMap[userId]) {
+                     chatStateMap[userId] = { unreadCount: 0, lastMessagePreview: 'Sin mensajes.' };
+                }
                 if(userId !== currentUserId) createChatItem(userId, '👤', userMap[userId], 'Conversación privada', true);
             });
             
-            // Botón para eliminar todo el historial de chat general
             const deleteAllPublicBtn = document.createElement('button');
             deleteAllPublicBtn.className = 'w-full mt-4 bg-red-100 text-red-700 border border-red-300 hover:bg-red-200 font-bold py-2 rounded-lg transition';
             deleteAllPublicBtn.textContent = '🗑️ Eliminar Historial de Chat General (Solo mensajes públicos)';
             deleteAllPublicBtn.onclick = () => showConfirm('global_chat_public', null, 'el historial de mensajes públicos');
             chatListView.appendChild(deleteAllPublicBtn);
 
-            // Botón para eliminar el perfil de usuario (opcional)
             const deleteProfileBtn = document.createElement('button');
             deleteProfileBtn.className = 'w-full mt-2 bg-gray-200 text-gray-700 border border-gray-400 hover:bg-gray-300 font-bold py-2 rounded-lg transition';
             deleteProfileBtn.textContent = '❌ Eliminar PERFIL de Usuario (Admin)';
@@ -328,7 +312,13 @@
             chatListView.classList.add('hidden');
             chatMessagesView.classList.remove('hidden');
             currentChatTitle.textContent = (partnerId === 'public') ? 'Chat General' : userMap[partnerId] || 'Usuario...';
+            
+            if (chatStateMap[partnerId]) {
+                chatStateMap[partnerId].unreadCount = 0;
+            }
+            
             if(lastSnapshot) processMessages(lastSnapshot);
+            renderChatList();
         }
 
         window.showChatList = () => {
@@ -347,7 +337,6 @@
             if (isPrivate) payload.recipientId = currentChatPartnerId;
             if (type === 'drawing') payload.reactions = {}; 
             try { 
-                // Asegúrate de que las Reglas de Seguridad permitan esta escritura.
                 await addDoc(collection(db, CHAT_COLLECTION_PATH), payload); 
             } 
             catch (e) { 
@@ -504,7 +493,6 @@
                 const msg = doc.data();
                 let shouldDisplay = false;
                 
-                // Criterio de visualización
                 if (msg.type === 'alert') {
                     if (currentChatPartnerId === 'public') {
                         if (msg.recipientId === BROADCAST_ID) shouldDisplay = true;
@@ -528,25 +516,80 @@
             if (wasScrolledToBottom) chatMessages.scrollTop = chatMessages.scrollHeight;
         }
 
+        function getMessagePreview(msg) {
+            if (msg.type === 'text') return msg.content.substring(0, 30) + (msg.content.length > 30 ? '...' : '');
+            if (msg.type === 'drawing') return '🖼️ Dibujo compartido';
+            if (msg.type === 'alert') {
+                if (msg.recipientId === BROADCAST_ID) return '🚨 Alerta General';
+                if (msg.recipientId === currentUserId) return '🔔 ¡Alerta Privada!';
+            }
+            return 'Mensaje de sistema/desconocido';
+        }
+
+
         function setupMessageListener() {
             const messagesQuery = query(collection(db, CHAT_COLLECTION_PATH), orderBy('timestamp', 'asc'));
             onSnapshot(messagesQuery, snapshot => {
+                let needsChatListUpdate = false;
+
                 snapshot.docChanges().forEach(change => {
                     const msg = change.doc.data();
                     
-                    if (change.type === "added" && msg.userId !== currentUserId) {
-                        // Lógica de Sonido:
-                        if (msg.type === 'alert') {
-                            if (msg.recipientId === BROADCAST_ID || msg.recipientId === currentUserId) playSound();
+                    if (change.type === "added") {
+                        const senderId = msg.userId;
+                        const isMe = senderId === currentUserId;
+                        
+                        let targetId = null; 
+                        if (msg.isPrivate === false) {
+                            targetId = 'public';
+                        } else if (msg.isPrivate === true) {
+                            targetId = isMe ? msg.recipientId : senderId;
                         }
-                        else {
-                            if (msg.recipientId === currentUserId && msg.isPrivate === true) playNotificationSound(); 
-                            else if (msg.isPrivate === false) playNotificationSound(); 
+                        
+                        if (targetId) {
+                            if (!chatStateMap[targetId]) {
+                                chatStateMap[targetId] = { unreadCount: 0, lastMessagePreview: 'Sin mensajes.' };
+                            }
+                            
+                            const senderName = userMap[senderId] || senderId.substring(0, 6);
+                            let preview = getMessagePreview(msg);
+                            if (targetId === 'public') {
+                                preview = `${isMe ? 'Tú' : senderName}: ${preview}`;
+                            } else if (isMe) {
+                                preview = `Tú: ${preview}`;
+                            } 
+                            chatStateMap[targetId].lastMessagePreview = preview;
+
+                            if (!isMe && targetId !== currentChatPartnerId) {
+                                chatStateMap[targetId].unreadCount++;
+                                needsChatListUpdate = true;
+                            } else if (targetId === currentChatPartnerId) {
+                                chatStateMap[targetId].unreadCount = 0;
+                            }
+
+                            if (!isMe) {
+                                if (msg.type === 'alert') {
+                                    if (msg.recipientId === BROADCAST_ID || msg.recipientId === currentUserId) playAlertSound();
+                                }
+                                else {
+                                    if (msg.isPrivate === true && msg.recipientId === currentUserId) playNotificationSound();
+                                    else if (msg.isPrivate === false && targetId === 'public') playNotificationSound();
+                                }
+                            }
                         }
                     }
                 });
+                
                 lastSnapshot = snapshot;
-                if (currentChatPartnerId) processMessages(snapshot);
+
+                if (currentChatPartnerId) {
+                    processMessages(snapshot);
+                }
+                
+                if (needsChatListUpdate || currentChatPartnerId === null) {
+                    renderChatList();
+                }
+
             }, e => { console.error("Message listener error:", e); postSystemMessage("ERROR: No se pudieron cargar los mensajes. Revisa las Reglas de Seguridad para esta ruta."); });
         }
 
@@ -616,6 +659,11 @@
                     chatMessages.innerHTML = '';
                     postSystemMessage("El historial de esta conversación ha sido borrado.");
                 }
+                
+                if (chatStateMap[partnerId]) {
+                    chatStateMap[partnerId].unreadCount = 0;
+                    chatStateMap[partnerId].lastMessagePreview = 'Historial borrado. Empieza una nueva conversación.';
+                }
 
                 showChatList(); 
             } catch (error) {
@@ -640,6 +688,11 @@
                 
                 postSystemMessage(`✅ ${snapshot.size} mensajes públicos eliminados. El Chat General está limpio.`);
                 
+                if (chatStateMap['public']) {
+                    chatStateMap['public'].unreadCount = 0;
+                    chatStateMap['public'].lastMessagePreview = 'Historial borrado. Empieza a chatear.';
+                }
+                
                 if (currentChatPartnerId === 'public') {
                     chatMessages.innerHTML = '';
                     postSystemMessage("El historial del Chat General ha sido borrado.");
@@ -656,6 +709,9 @@
              try {
                 await deleteDoc(doc(db, USER_PROFILES_COLLECTION_PATH, userId));
                 postSystemMessage(`Perfil de usuario (ID: ${userId.substring(0, 6)}) eliminado de la base de datos. Su burbuja de chat desaparecerá para todos.`);
+                
+                delete chatStateMap[userId];
+
             } catch (error) {
                 console.error("Error al eliminar el perfil de usuario:", error);
                 postSystemMessage(`ERROR: No se pudo eliminar el perfil. Asegúrate de que el ID es correcto y existe, y que las Reglas de Seguridad lo permiten.`);
@@ -690,13 +746,18 @@
             // Guarda el contenido antes de redimensionar
             const currentDrawing = drawingHistory.length > 0 ? drawingHistory[drawingHistory.length - 1] : null;
 
-            drawingCanvas.width = document.querySelector('#drawingArea').clientWidth; 
+            // Establecer la altura y el ancho físico del canvas.
+            const drawingArea = document.querySelector('#drawingArea');
+            drawingCanvas.width = drawingArea.clientWidth; 
+            // CAMBIO: Altura fijada a 400px (para el aspecto cuadrado/alto)
+            drawingCanvas.height = 400; 
+
             d_ctx.lineCap = 'round'; 
             setStrokeColor(colorPicker.value); 
             
             // Restaura el contenido después de redimensionar
             if (currentDrawing) restoreState(currentDrawing);
-            else saveState(); // Asegura que el historial se inicialice si el canvas está vacío
+            else saveState();
         }
         window.toggleDrawingArea = () => { 
             const drawingArea = document.getElementById('drawingArea');
@@ -710,7 +771,15 @@
             }
         }
 
-        const getPos = (c, e) => { const r = c.getBoundingClientRect(); return { x: (e.touches ? e.touches[0].clientX : e.clientX) - r.left, y: (e.touches ? e.touches[0].clientY : e.touches[0].clientY) - r.top }; }
+        // FIX CRÍTICO: Se corrigió la lógica del ratón para que use e.clientX/Y cuando e.touches es nulo.
+        const getPos = (c, e) => { 
+            const r = c.getBoundingClientRect(); 
+            return { 
+                x: (e.touches ? e.touches[0].clientX : e.clientX) - r.left, 
+                y: (e.touches ? e.touches[0].clientY : e.clientY) - r.top 
+            }; 
+        }
+
         const startDrawing = e => { isDrawing = true; hasDrawn = false; d_ctx.beginPath(); d_ctx.moveTo(getPos(drawingCanvas, e).x, getPos(drawingCanvas, e).y); e.preventDefault(); }
         const draw = e => { if (!isDrawing) return; hasDrawn = true; d_ctx.lineTo(getPos(drawingCanvas, e).x, getPos(drawingCanvas, e).y); d_ctx.stroke(); e.preventDefault(); }
         const stopDrawing = () => { if (isDrawing && hasDrawn) saveState(); isDrawing = false; }
@@ -721,14 +790,14 @@
         messageInput.addEventListener('keypress', e => { if (e.key === 'Enter') sendChatMessage(); });
         
         let audioContextStarted = false;
-        const alertSynth = new Tone.Synth({ oscillator: { type: "square" }, envelope: { attack: 0.01, release: 0.3 } }).toDestination();
-        const notificationSynth = new Tone.MembraneSynth({ pitchDecay: 0.008, octaves: 2, envelope: { attack: 0.001, decay: 0.4, sustain: 0.01, release: 0.05 }, volume: -10 }).toDestination();
+        const alertSynth = new Tone.Synth({ oscillator: { type: "square" }, envelope: { attack: 0.01, release: 0.3 }, volume: -5 }).toDestination();
+        const notificationSynth = new Tone.MembraneSynth({ pitchDecay: 0.008, octaves: 2, envelope: { attack: 0.001, decay: 0.4, sustain: 0.01, release: 0.05 }, volume: -2 }).toDestination();
         
         function startAudioContext() { 
             if (audioContextStarted) return; 
             Tone.start().then(() => { audioContextStarted = true; }).catch(e => console.error("Audio context error:", e)); 
         }
-        function playSound() { startAudioContext(); if (audioContextStarted) alertSynth.triggerAttackRelease("C5", "4n", Tone.now()); }
+        function playAlertSound() { startAudioContext(); if (audioContextStarted) alertSynth.triggerAttackRelease("C5", "4n", Tone.now()); }
         function playNotificationSound() { startAudioContext(); if (audioContextStarted) notificationSynth.triggerAttackRelease("C3", 0.2, Tone.now()); }
 
         window.onload = () => { 
