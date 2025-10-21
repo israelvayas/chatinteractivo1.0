@@ -53,6 +53,9 @@
 
         <div id="chat-list-view" class="bg-white rounded-xl shadow-lg p-4 transition-transform duration-300">
             <h3 class="text-xl font-bold mb-4 border-b pb-2 text-gray-800">Chats Disponibles</h3>
+            <button onclick="showNewChatModal()" class="w-full bg-green-600 text-white font-bold py-2 rounded-lg hover:bg-green-700 transition mb-4">
+                ➕ Iniciar Nuevo Chat Privado
+            </button> 
             </div>
 
         <div id="chat-messages-view" class="hidden bg-white rounded-xl shadow-lg p-4 flex flex-col transition-transform duration-300">
@@ -118,6 +121,15 @@
         </div>
     </div>
 
+    <div id="newChatModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="bg-white rounded-xl shadow-2xl p-6 w-96 max-h-[80vh] flex flex-col">
+            <h4 class="text-xl font-bold mb-4 text-gray-900 border-b pb-2">Seleccionar Usuario para Chatear</h4>
+            <div id="userListForNewChat" class="flex-grow overflow-y-auto mb-4 space-y-2">
+                </div>
+            <button onclick="document.getElementById('newChatModal').classList.add('hidden')" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg transition">Cerrar</button>
+        </div>
+    </div>
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -159,6 +171,9 @@
         const imageZoomModal = document.getElementById('imageZoomModal'), zoomedImage = document.getElementById('zoomedImage');
         const confirmModal = document.getElementById('confirmModal'), confirmTitle = document.getElementById('confirmTitle');
         const confirmMessage = document.getElementById('confirmMessage'), confirmExecuteBtn = document.getElementById('confirmExecuteBtn');
+        // NUEVAS REFERENCIAS PARA EL MODAL DE NUEVO CHAT
+        const newChatModal = document.getElementById('newChatModal');
+        const userListForNewChat = document.getElementById('userListForNewChat');
         
         let isDrawing = false, hasDrawn = false, currentColor = '#000000', currentWidth = 4;
         let drawingHistory = [], MAX_HISTORY = 15;
@@ -218,7 +233,12 @@
         }
         
         function renderChatList() {
-            chatListView.innerHTML = '';
+            // Limpia la lista, pero deja el botón de "Nuevo Chat" que está en el HTML
+            const chatListItems = document.querySelector('#chat-list-view').children;
+            // Elimina todos los elementos excepto los 2 primeros (h3 y botón de nuevo chat)
+            while (chatListItems.length > 3) {
+                chatListItems[chatListItems.length - 1].remove();
+            }
             
             const createChatItem = (id, icon, name, subtext, isDeletable = false) => {
                 const itemDiv = document.createElement('div');
@@ -261,15 +281,24 @@
                 chatListView.appendChild(itemDiv);
             };
 
+            // 1. Chat General (Siempre visible)
             createChatItem('public', '💬', 'Chat General', 'Habla con todos los usuarios');
 
-            Object.keys(userMap).forEach(userId => {
-                if (userId !== currentUserId && !chatStateMap[userId]) {
+            // 2. Chats Privados (Solo los que tienen historial en chatStateMap)
+            const conversedPartnerIds = Object.keys(chatStateMap).filter(id => id !== 'public' && id !== currentUserId);
+            
+            conversedPartnerIds.forEach(userId => {
+                // Usa el nombre del userMap si existe, o un fallback
+                const displayName = userMap[userId] || `Usuario Desconocido ${userId.substring(0, 6)}`;
+
+                // Aunque ya están en chatStateMap, nos aseguramos de que el preview esté correcto antes de crear el item.
+                if (!chatStateMap[userId]) {
                      chatStateMap[userId] = { unreadCount: 0, lastMessagePreview: 'Sin mensajes.' };
                 }
-                if(userId !== currentUserId) createChatItem(userId, '👤', userMap[userId], 'Conversación privada', true);
+                createChatItem(userId, '👤', displayName, 'Conversación privada', true);
             });
             
+            // Botones de Moderación
             const deleteAllPublicBtn = document.createElement('button');
             deleteAllPublicBtn.className = 'w-full mt-4 bg-red-100 text-red-700 border border-red-300 hover:bg-red-200 font-bold py-2 rounded-lg transition';
             deleteAllPublicBtn.textContent = '🗑️ Eliminar Historial de Chat General (Solo mensajes públicos)';
@@ -278,8 +307,8 @@
 
             const deleteProfileBtn = document.createElement('button');
             deleteProfileBtn.className = 'w-full mt-2 bg-gray-200 text-gray-700 border border-gray-400 hover:bg-gray-300 font-bold py-2 rounded-lg transition';
-            deleteProfileBtn.textContent = '❌ Eliminar PERFIL de Usuario (Admin)';
-            deleteProfileBtn.onclick = () => showConfirm('user_profile', null, 'un perfil de usuario (se requiere ID)');
+            deleteProfileBtn.textContent = '❌ Eliminar PERFIL de Usuario (Admin - por nombre)';
+            deleteProfileBtn.onclick = () => showConfirm('user_profile', null, 'un perfil de usuario (se requiere el nombre)');
             chatListView.appendChild(deleteProfileBtn);
         }
 
@@ -292,7 +321,17 @@
                     if (profile.userId === currentUserId) { userHasProfile = true; currentUsername = profile.username; }
                 });
                 
-                if (currentChatPartnerId === null) renderChatList();
+                // *** CORRECCIÓN DE ROBUSTEZ: Se re-renderiza todo para actualizar nombres ***
+                renderChatList(); 
+                
+                if (currentChatPartnerId) {
+                    currentChatTitle.textContent = (currentChatPartnerId === 'public') ? 'Chat General' : userMap[currentChatPartnerId] || `Usuario Desconocido ${currentChatPartnerId.substring(0, 6)}...`;
+                    if (lastSnapshot) {
+                        processMessages(lastSnapshot);
+                    }
+                }
+                // *** FIN CORRECCIÓN DE ROBUSTEZ ***
+
                 userInfoDisplay.textContent = `ID: ${currentUserId.substring(0, 8)}...`;
                 if (userHasProfile) {
                     usernameSetup.classList.add('hidden');
@@ -311,7 +350,8 @@
             currentChatPartnerId = partnerId;
             chatListView.classList.add('hidden');
             chatMessagesView.classList.remove('hidden');
-            currentChatTitle.textContent = (partnerId === 'public') ? 'Chat General' : userMap[partnerId] || 'Usuario...';
+            // Usamos el fallback para el título por si el perfil aún no carga o fue eliminado
+            currentChatTitle.textContent = (partnerId === 'public') ? 'Chat General' : userMap[partnerId] || `Usuario Desconocido ${partnerId.substring(0, 6)}...`;
             
             if (chatStateMap[partnerId]) {
                 chatStateMap[partnerId].unreadCount = 0;
@@ -319,6 +359,9 @@
             
             if(lastSnapshot) processMessages(lastSnapshot);
             renderChatList();
+            
+            // *** FUNCIONALIDAD: Auto-enfoque del input ***
+            messageInput.focus();
         }
 
         window.showChatList = () => {
@@ -411,7 +454,8 @@
             const messageId = doc.id;
             const message = doc.data();
             const { userId, type, content, recipientId, reactions } = message;
-            const isMe = userId === currentUserId, displayName = userMap[userId] || `Usuario ${userId.substring(0, 6)}`;
+            // Usa el nombre del userMap o el fallback
+            const isMe = userId === currentUserId, displayName = userMap[userId] || `Usuario Desconocido ${userId.substring(0, 6)}`;
             const wrapper = document.createElement('div'), messageDiv = document.createElement('div');
             
             if (type === 'alert') {
@@ -547,8 +591,11 @@
                         }
                         
                         if (targetId) {
+                            
                             if (!chatStateMap[targetId]) {
                                 chatStateMap[targetId] = { unreadCount: 0, lastMessagePreview: 'Sin mensajes.' };
+                                // Si el chatStateMap se crea, necesitamos actualizar la lista de chats para que aparezca la burbuja
+                                needsChatListUpdate = true;
                             }
                             
                             const senderName = userMap[senderId] || senderId.substring(0, 6);
@@ -592,7 +639,48 @@
 
             }, e => { console.error("Message listener error:", e); postSystemMessage("ERROR: No se pudieron cargar los mensajes. Revisa las Reglas de Seguridad para esta ruta."); });
         }
+        
+        // ************************************
+        // LÓGICA DE NUEVO CHAT (Implementada)
+        // ************************************
+        
+        window.showNewChatModal = () => {
+            userListForNewChat.innerHTML = '';
+            // Lista todos los usuarios excepto el actual.
+            const partnerIds = Object.keys(userMap).filter(id => id !== currentUserId);
 
+            if (partnerIds.length === 0) {
+                userListForNewChat.innerHTML = `<p class="text-center text-gray-500">No hay otros usuarios registrados aún.</p>`;
+            } else {
+                partnerIds.forEach(userId => {
+                    const displayName = userMap[userId] || `Usuario Desconocido ${userId.substring(0, 6)}`;
+                    const userItem = document.createElement('div');
+                    userItem.className = 'flex items-center justify-between p-3 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors border-b';
+                    userItem.onclick = () => selectNewChatPartner(userId, displayName);
+                    userItem.innerHTML = `
+                        <div class="flex items-center min-w-0">
+                            <div class="w-8 h-8 bg-gray-300 text-gray-700 rounded-full flex items-center justify-center text-sm mr-3">👤</div>
+                            <span class="font-semibold text-gray-800 truncate">${displayName}</span>
+                        </div>
+                        <span class="text-xs text-gray-500 flex-shrink-0">${userId.substring(0, 6)}...</span>
+                    `;
+                    userListForNewChat.appendChild(userItem);
+                });
+            }
+            newChatModal.classList.remove('hidden');
+        }
+
+        function selectNewChatPartner(partnerId, partnerName) {
+            newChatModal.classList.add('hidden');
+            
+            // Asegura que el chatPartnerId existe en chatStateMap para que la lista de chats se actualice correctamente si es un chat nuevo
+            if (!chatStateMap[partnerId]) {
+                 chatStateMap[partnerId] = { unreadCount: 0, lastMessagePreview: `Iniciando chat con ${partnerName}.` };
+            }
+            
+            openChat(partnerId);
+        }
+        
         // ************************************
         // LÓGICA DE MODERACIÓN Y ELIMINACIÓN
         // ************************************
@@ -609,7 +697,8 @@
                 confirmMessage.innerHTML = `¡ADVERTENCIA! ¿Estás seguro de que quieres **eliminar TODOS los mensajes públicos** (Chat General) de la base de datos? Esta acción es **IRREVERSIBLE** para todos.`;
                 confirmExecuteBtn.textContent = 'Eliminar MENSAJES PÚBLICOS';
             } else if (type === 'user_profile') {
-                confirmMessage.innerHTML = `¿Estás seguro de que quieres **eliminar el PERFIL de un usuario**? Se te pedirá su ID. Esto hará que su burbuja de chat desaparezca de la lista (hasta que vuelva a unirse).`;
+                // Mensaje actualizado para pedir el nombre de usuario
+                confirmMessage.innerHTML = `¿Estás seguro de que quieres **eliminar el PERFIL de un usuario**? Se te pedirá su **nombre de usuario**. Esto hará que su burbuja de chat desaparezca de la lista (hasta que vuelva a unirse).`;
                 confirmExecuteBtn.textContent = 'Eliminar PERFIL (Admin)';
             }
         }
@@ -628,11 +717,12 @@
             } else if (type === 'global_chat_public') {
                 await deleteGlobalPublicChatHistory();
             } else if (type === 'user_profile') {
-                const userIdToDelete = prompt("Ingresa el ID completo del usuario que deseas eliminar (ej: S9nL...):");
-                if (userIdToDelete && userIdToDelete.length > 5) {
-                    await deleteUserProfile(userIdToDelete);
-                } else if (userIdToDelete !== null) {
-                    postSystemMessage("ID de usuario no válido.");
+                // Pide el nombre de usuario en lugar del ID
+                const usernameToDelete = prompt("Ingresa el NOMBRE DE USUARIO del perfil que deseas eliminar:");
+                if (usernameToDelete && usernameToDelete.length >= 3) {
+                    await deleteUserProfileByUsername(usernameToDelete.trim());
+                } else if (usernameToDelete !== null) {
+                    postSystemMessage("Nombre de usuario no válido.");
                 }
             }
             confirmAction = { type: null, payload: null };
@@ -705,16 +795,40 @@
             }
         }
         
-        async function deleteUserProfile(userId) {
+        // FUNCIÓN: Elimina el perfil buscando por nombre de usuario.
+        async function deleteUserProfileByUsername(username) {
              try {
-                await deleteDoc(doc(db, USER_PROFILES_COLLECTION_PATH, userId));
-                postSystemMessage(`Perfil de usuario (ID: ${userId.substring(0, 6)}) eliminado de la base de datos. Su burbuja de chat desaparecerá para todos.`);
+                const q = query(collection(db, USER_PROFILES_COLLECTION_PATH), where("username", "==", username));
+                const snapshot = await getDocs(q);
                 
+                if (snapshot.empty) {
+                    postSystemMessage(`ERROR: No se encontró ningún perfil con el nombre de usuario '${username}'.`);
+                    return;
+                }
+                
+                // Asume que solo hay un perfil por nombre de usuario
+                const userDoc = snapshot.docs[0];
+                const userId = userDoc.id;
+                
+                // Eliminamos el documento del perfil de Firestore
+                await deleteDoc(userDoc.ref);
+                
+                postSystemMessage(`✅ Perfil de usuario '${username}' (ID: ${userId.substring(0, 6)}) eliminado de la base de datos.`);
+                
+                // Borramos las referencias locales inmediatamente
+                delete userMap[userId];
                 delete chatStateMap[userId];
+                
+                if (currentChatPartnerId === userId) {
+                    showChatList();
+                    postSystemMessage("Has sido redirigido a la lista de chats porque el perfil del usuario actual ha sido eliminado.");
+                } else {
+                    renderChatList();
+                }
 
             } catch (error) {
-                console.error("Error al eliminar el perfil de usuario:", error);
-                postSystemMessage(`ERROR: No se pudo eliminar el perfil. Asegúrate de que el ID es correcto y existe, y que las Reglas de Seguridad lo permiten.`);
+                console.error("Error al eliminar el perfil de usuario por nombre:", error);
+                postSystemMessage(`ERROR: No se pudo eliminar el perfil de '${username}'. Asegúrate de que las Reglas de Seguridad lo permiten.`);
             }
         }
         
@@ -749,7 +863,7 @@
             // Establecer la altura y el ancho físico del canvas.
             const drawingArea = document.querySelector('#drawingArea');
             drawingCanvas.width = drawingArea.clientWidth; 
-            // CAMBIO: Altura fijada a 400px (para el aspecto cuadrado/alto)
+            // Altura fijada a 400px (para el aspecto cuadrado/alto)
             drawingCanvas.height = 400; 
 
             d_ctx.lineCap = 'round'; 
@@ -771,7 +885,6 @@
             }
         }
 
-        // FIX CRÍTICO: Se corrigió la lógica del ratón para que use e.clientX/Y cuando e.touches es nulo.
         const getPos = (c, e) => { 
             const r = c.getBoundingClientRect(); 
             return { 
@@ -790,15 +903,30 @@
         messageInput.addEventListener('keypress', e => { if (e.key === 'Enter') sendChatMessage(); });
         
         let audioContextStarted = false;
-        const alertSynth = new Tone.Synth({ oscillator: { type: "square" }, envelope: { attack: 0.01, release: 0.3 }, volume: -5 }).toDestination();
-        const notificationSynth = new Tone.MembraneSynth({ pitchDecay: 0.008, octaves: 2, envelope: { attack: 0.001, decay: 0.4, sustain: 0.01, release: 0.05 }, volume: -2 }).toDestination();
         
+        // Alerta de emergencia (se mantiene el sonido, pero con volumen +2dB)
+        const alertSynth = new Tone.Synth({ oscillator: { type: "square" }, envelope: { attack: 0.01, release: 0.3 }, volume: 2 }).toDestination();
+        
+        // Sonido de notificación (PolySynth para tono más alegre) con volumen +10dB
+        const notificationSynth = new Tone.PolySynth(Tone.Synth, {
+            oscillator: { type: "sine" },
+            envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.2 }
+        }).toDestination();
+        notificationSynth.volume.value = 10; // Subido a +10dB
+
         function startAudioContext() { 
             if (audioContextStarted) return; 
             Tone.start().then(() => { audioContextStarted = true; }).catch(e => console.error("Audio context error:", e)); 
         }
-        function playAlertSound() { startAudioContext(); if (audioContextStarted) alertSynth.triggerAttackRelease("C5", "4n", Tone.now()); }
-        function playNotificationSound() { startAudioContext(); if (audioContextStarted) notificationSynth.triggerAttackRelease("C3", 0.2, Tone.now()); }
+        function playAlertSound() { 
+            startAudioContext(); 
+            if (audioContextStarted) alertSynth.triggerAttackRelease("C5", "4n", Tone.now()); 
+        }
+        function playNotificationSound() { 
+            startAudioContext(); 
+            // Toca un acorde simple (C5 y G5) para que suene más melódico y alegre
+            if (audioContextStarted) notificationSynth.triggerAttackRelease(["C5", "G5"], "8n", Tone.now()); 
+        }
 
         window.onload = () => { 
             initFirebase(); 
